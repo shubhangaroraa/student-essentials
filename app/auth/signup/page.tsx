@@ -2,15 +2,15 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 
-export default function Login() {
+export default function Signup() {
   const supabase = createClient()
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [firstName, setFirstName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
 
   const signInWithGoogle = async () => {
     await supabase.auth.signInWithOAuth({
@@ -19,13 +19,30 @@ export default function Login() {
     })
   }
 
-  const signIn = async (e: React.FormEvent) => {
+  const signUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { first_name: firstName } }
+    })
     if (error) { setError(error.message); setLoading(false) }
-    else router.push('/dashboard')
+    else setSuccess(true)
+  }
+
+  if (success) {
+    return (
+      <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--cream)' }}>
+        <div style={{ textAlign: 'center', maxWidth: 400, padding: '0 24px' }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 20px' }}>✅</div>
+          <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 26, color: 'var(--bottle)', marginBottom: 10 }}>Check your email!</h2>
+          <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.7 }}>We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.</p>
+          <Link href="/auth/login" style={{ display: 'inline-block', marginTop: 24, fontSize: 14, color: 'var(--forest)', fontWeight: 500, textDecoration: 'none' }}>← Back to login</Link>
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -43,13 +60,20 @@ export default function Login() {
           <span style={{ fontSize: 15, fontWeight: 500, color: '#fff' }}>Student<span style={{ color: 'var(--sage)' }}>Essentials</span></span>
         </Link>
         <div style={{ position: 'relative', zIndex: 2 }}>
-          <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--sage)', marginBottom: 16 }}>Welcome back</div>
+          <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--sage)', marginBottom: 16 }}>Join 10,000+ students</div>
           <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 38, fontWeight: 500, color: '#fff', lineHeight: 1.15, marginBottom: 16 }}>
-            Pack Smart.<br/><em style={{ color: 'var(--sage)' }}>Land Ready.</em>
+            Your UK life<br/><em style={{ color: 'var(--sage)' }}>starts here.</em>
           </h1>
           <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 340 }}>
-            Sign in to manage your UK settling-in pack, track orders and access your dashboard.
+            Create a free account and build your pre-departure pack in minutes.
           </p>
+          <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {['Bedding delivered before you arrive', 'SIM card activated before you board', 'Airport transfer pre-booked', 'Lowest remittance rates guaranteed'].map(perk => (
+              <div key={perk} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
+                <span style={{ color: 'var(--sage)' }}>✓</span> {perk}
+              </div>
+            ))}
+          </div>
         </div>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', position: 'relative', zIndex: 2 }}>© 2026 StudentEssentials</div>
       </div>
@@ -57,8 +81,8 @@ export default function Login() {
       {/* RIGHT */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 64px', background: 'var(--offwhite)' }}>
         <div style={{ width: '100%', maxWidth: 400 }}>
-          <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>Sign in</h2>
-          <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 28 }}>Welcome back — let's pick up where you left off.</p>
+          <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>Create account</h2>
+          <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 28 }}>Free to join. No credit card needed.</p>
 
           {/* GOOGLE */}
           <button onClick={signInWithGoogle} style={{ width: '100%', padding: '12px 20px', fontSize: 14, color: 'var(--ink)', background: '#fff', border: '0.5px solid rgba(26,26,26,0.15)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 20, fontFamily: 'DM Sans, sans-serif', fontWeight: 400 }}>
@@ -74,29 +98,35 @@ export default function Login() {
           {/* DIVIDER */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
             <div style={{ flex: 1, height: '0.5px', background: 'rgba(26,58,42,0.12)' }}></div>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>or sign in with email</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>or sign up with email</span>
             <div style={{ flex: 1, height: '0.5px', background: 'rgba(26,58,42,0.12)' }}></div>
           </div>
 
           {/* EMAIL FORM */}
-          <form onSubmit={signIn} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <form onSubmit={signUp} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>First name</label>
+              <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Priya" required style={{ width: '100%', padding: '11px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}/>
+            </div>
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Email address</label>
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="priya@example.com" required style={{ width: '100%', padding: '11px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}/>
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password" required style={{ width: '100%', padding: '11px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}/>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 8 characters" required minLength={8} style={{ width: '100%', padding: '11px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}/>
             </div>
+
             {error && <div style={{ fontSize: 13, color: '#e8413e', background: 'rgba(232,65,62,0.08)', padding: '10px 14px', borderRadius: 8 }}>{error}</div>}
+
             <button type="submit" disabled={loading} style={{ width: '100%', padding: 13, fontSize: 15, fontWeight: 500, color: '#fff', background: loading ? 'var(--muted)' : 'var(--forest)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-              {loading ? 'Signing in…' : 'Sign in →'}
+              {loading ? 'Creating account…' : 'Create free account →'}
             </button>
           </form>
 
           <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--muted)', marginTop: 24 }}>
-            Don't have an account?{' '}
-            <Link href="/auth/signup" style={{ color: 'var(--forest)', fontWeight: 500, textDecoration: 'none' }}>Sign up free</Link>
+            Already have an account?{' '}
+            <Link href="/auth/login" style={{ color: 'var(--forest)', fontWeight: 500, textDecoration: 'none' }}>Sign in</Link>
           </div>
         </div>
       </div>
