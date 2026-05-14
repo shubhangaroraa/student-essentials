@@ -11,7 +11,6 @@ export default function Signup() {
   const [firstName, setFirstName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
 
   const signInWithGoogle = async () => {
     const supabase = createClient()
@@ -26,18 +25,31 @@ export default function Signup() {
     const supabase = createClient()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signUp({
+
+    const { error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { first_name: firstName } }
     })
-    if (error) { setError(error.message); setLoading(false) }
-    else setSuccess(true)
-  }
 
-  if (success) {
+    if (signUpError) {
+      setError(signUpError.message)
+      setLoading(false)
+      return
+    }
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    })
+
+    if (signInError) {
+      setError(signInError.message)
+      setLoading(false)
+      return
+    }
+
     router.push('/dashboard')
-    return null
   }
 
   return (
