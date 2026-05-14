@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 export default function Signup() {
   const [email, setEmail] = useState('')
@@ -34,16 +35,8 @@ export default function Signup() {
   }
 
   if (success) {
-    return (
-      <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--cream)' }}>
-        <div style={{ textAlign: 'center', maxWidth: 400, padding: '0 24px' }}>
-          <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 20px' }}>✅</div>
-          <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 26, color: 'var(--bottle)', marginBottom: 10 }}>Check your email!</h2>
-          <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.7 }}>We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.</p>
-          <Link href="/auth/login" style={{ display: 'inline-block', marginTop: 24, fontSize: 14, color: 'var(--forest)', fontWeight: 500, textDecoration: 'none' }}>← Back to login</Link>
-        </div>
-      </main>
-    )
+    router.push('/dashboard')
+    return null
   }
 
   return (
