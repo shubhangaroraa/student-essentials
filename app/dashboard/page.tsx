@@ -25,16 +25,15 @@ const pages = ['overview', 'orders', 'remittance', 'referrals', 'profile'] as co
 type Page = typeof pages[number]
 
 export default function Dashboard() {
-  const supabase = createClient()
   const router = useRouter()
   const [page, setPage] = useState<Page>('overview')
   const [user, setUser] = useState<{ email: string; firstName: string } | null>(null)
   const [daysLeft, setDaysLeft] = useState(0)
   const [remiAmount, setRemiAmount] = useState(50000)
-  const [promoInput, setPromoInput] = useState('')
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
+    const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.push('/auth/login'); return }
       setUser({ email: user.email ?? '', firstName: user.user_metadata?.first_name ?? user.email?.split('@')[0] ?? 'there' })
@@ -46,7 +45,11 @@ export default function Dashboard() {
   const remiGbp = ((remiAmount / 106.4) * 0.996).toFixed(2)
   const remiFee = ((remiAmount / 106.4) * 0.004).toFixed(2)
 
-  const signOut = async () => { await supabase.auth.signOut(); router.push('/') }
+  const signOut = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/')
+  }
 
   const navItems: { id: Page; icon: string; label: string }[] = [
     { id: 'overview', icon: '🏠', label: 'Overview' },
@@ -76,11 +79,9 @@ export default function Dashboard() {
               {item.label}
             </button>
           ))}
-          <div style={{ marginTop: 8 }}>
-            <Link href="/services" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>
-              <span style={{ fontSize: 15, width: 20, textAlign: 'center' }}>✨</span> Browse Services
-            </Link>
-          </div>
+          <Link href="/services" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, fontSize: 13, color: 'rgba(255,255,255,.55)', textDecoration: 'none', marginTop: 8 }}>
+            <span style={{ fontSize: 15, width: 20, textAlign: 'center' }}>✨</span> Browse Services
+          </Link>
         </div>
 
         <div style={{ padding: '12px 12px 18px', borderTop: '0.5px solid rgba(255,255,255,.07)' }}>
@@ -115,7 +116,6 @@ export default function Dashboard() {
           {/* OVERVIEW */}
           {page === 'overview' && (
             <div>
-              {/* Welcome */}
               <div style={{ background: 'var(--bottle)', borderRadius: 20, padding: '28px 36px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', overflow: 'hidden' }}>
                 <div style={{ position: 'absolute', width: 300, height: 300, borderRadius: '50%', background: 'rgba(46,125,82,.3)', top: -80, right: -60, filter: 'blur(60px)', pointerEvents: 'none' }}></div>
                 <div style={{ position: 'relative', zIndex: 2 }}>
@@ -129,7 +129,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Stats */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 24 }}>
                 {[['📦', '4', 'Services ordered'], ['✅', '3', 'Confirmed'], ['💷', '£180', 'Total spent'], ['🎯', '71%', 'Pack complete']].map(([icon, val, label]) => (
                   <div key={label} style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
@@ -140,7 +139,6 @@ export default function Dashboard() {
                 ))}
               </div>
 
-              {/* Checklist */}
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
                 <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
                   <div style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -168,21 +166,19 @@ export default function Dashboard() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  {/* Quick actions */}
                   <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
                     <div style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>Quick actions</div>
                     <div style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                       {[['✨', 'Add service', 'Browse all 7', '/services'], ['💸', 'Send money', '0.4% fee', '#'], ['📦', 'Track orders', '4 active', '#'], ['🎁', 'Refer friend', 'Earn £10', '#']].map(([icon, label, sub, href]) => (
-                        <Link key={label} href={href} onClick={() => { if (href === '#') { if (label === 'Send money') setPage('remittance'); if (label === 'Track orders') setPage('orders'); if (label === 'Refer friend') setPage('referrals'); } }} style={{ padding: '12px', borderRadius: 10, border: '0.5px solid var(--border)', background: 'var(--cream)', textDecoration: 'none', display: 'block', transition: 'all .2s' }}>
+                        <div key={label} onClick={() => { if (label === 'Send money') setPage('remittance'); if (label === 'Track orders') setPage('orders'); if (label === 'Refer friend') setPage('referrals'); }} style={{ padding: '12px', borderRadius: 10, border: '0.5px solid var(--border)', background: 'var(--cream)', cursor: 'pointer' }}>
                           <span style={{ fontSize: 20, display: 'block', marginBottom: 6 }}>{icon}</span>
                           <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', display: 'block' }}>{label}</span>
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{sub}</span>
-                        </Link>
+                        </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Notifications */}
                   <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
                     <div style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>Notifications</div>
                     <div style={{ padding: '8px 22px' }}>
