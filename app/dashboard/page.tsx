@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
+export const dynamic = 'force-dynamic'
+
 const orders = [
   { id: 'SE-2026-48201', services: 'Bedding & Kitchen Pack', icon: '🛏️', amount: 89, status: 'Confirmed', date: '13 May 2026' },
   { id: 'SE-2026-48202', services: 'UK SIM Card', icon: '📱', amount: 14, status: 'Dispatched', date: '13 May 2026' },
