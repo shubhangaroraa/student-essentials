@@ -2,16 +2,16 @@ import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-04-22.dahlia',
-})
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
 export async function POST(request: Request) {
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: '2026-04-22.dahlia',
+  })
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+
   const body = await request.text()
   const signature = request.headers.get('stripe-signature')!
 
@@ -32,10 +32,8 @@ export async function POST(request: Request) {
     const session = event.data.object as Stripe.Checkout.Session
 
     try {
-      // Generate order reference
       const orderRef = 'SE-' + new Date().getFullYear() + '-' + Math.floor(10000 + Math.random() * 90000)
 
-      // Save order to Supabase
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert({
