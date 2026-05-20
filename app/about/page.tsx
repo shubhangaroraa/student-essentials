@@ -182,8 +182,18 @@ export default function About() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 32, marginBottom: 40 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 500, color: '#fff', marginBottom: 10 }}>Student<span style={{ color: 'var(--sage)' }}>Essentials</span></div>
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', maxWidth: 240, lineHeight: 1.7 }}>Supporting international students with essential services for a smooth transition to UK life.</p>
-            <div style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 14, fontStyle: 'italic', color: 'var(--sage)', marginTop: 12 }}>"Pack Smart. Land Ready."</div>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', maxWidth: 260, lineHeight: 1.7, marginBottom: 12 }}>Supporting international students with essential services for a smooth transition to UK life.</p>
+            <div style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 14, fontStyle: 'italic', color: 'var(--sage)', marginBottom: 20 }}>"Pack Smart. Land Ready."</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <span>🏢</span>
+                <span>Student Solutions Pvt Limited<br/>3 Fulham Park Gardens<br/>London, England, SW6 4JX</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>✉️</span>
+                <a href="mailto:care@student-essentials.com" style={{ color: 'var(--sage)', textDecoration: 'none' }}>care@student-essentials.com</a>
+              </div>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 48, flexWrap: 'wrap' }}>
             {[
@@ -199,7 +209,7 @@ export default function About() {
           </div>
         </div>
         <div style={{ paddingTop: 20, borderTop: '0.5px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>© 2026 StudentEssentials. All rights reserved.</p>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>© 2026 Student Solutions Pvt Limited. All rights reserved.</p>
           <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>student-essentials.com</p>
         </div>
       </footer>
