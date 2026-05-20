@@ -1,9 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
-export default function CheckoutSuccess() {
+function SuccessContent() {
   const searchParams = useSearchParams()
   const sessionId = searchParams.get('session_id')
   const [orderRef] = useState('SE-' + new Date().getFullYear() + '-' + Math.floor(10000 + Math.random() * 90000))
@@ -45,5 +45,13 @@ export default function CheckoutSuccess() {
         </div>
       </div>
     </main>
+  )
+}
+
+export default function CheckoutSuccess() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>}>
+      <SuccessContent />
+    </Suspense>
   )
 }
