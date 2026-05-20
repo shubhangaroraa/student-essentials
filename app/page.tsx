@@ -22,7 +22,9 @@ export default function Home() {
             Student<span style={{ color: 'var(--forest)' }}>Essentials</span>
           </span>
         </Link>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+          <Link href="/services" style={{ fontSize: 14, color: 'var(--muted)', textDecoration: 'none' }}>Services</Link>
+          <Link href="/about" style={{ fontSize: 14, color: 'var(--muted)', textDecoration: 'none' }}>About</Link>
           <Link href="/auth/login" style={{ padding: '8px 18px', fontSize: 14, color: 'var(--bottle)', background: 'transparent', border: '0.5px solid rgba(26,58,42,.3)', borderRadius: 40, textDecoration: 'none' }}>
             Log in
           </Link>
