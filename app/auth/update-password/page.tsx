@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -11,6 +11,21 @@ export default function UpdatePassword() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    // Handle the auth session from the URL hash
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setReady(true)
+      }
+    })
+    // Also check if already has session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setReady(true)
+    })
+  }, [])
 
   const updatePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,7 +44,7 @@ export default function UpdatePassword() {
       <div style={{ textAlign: 'center', maxWidth: 400, padding: '0 24px' }}>
         <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 20px' }}>✅</div>
         <h2 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, color: 'var(--bottle)', marginBottom: 10 }}>Password updated!</h2>
-        <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 24 }}>Your password has been changed successfully.</p>
+        <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 24 }}>Your password has been changed. You can now sign in.</p>
         <Link href="/auth/login" style={{ display: 'inline-block', padding: '12px 28px', fontSize: 14, fontWeight: 500, color: '#fff', background: 'var(--forest)', borderRadius: 40, textDecoration: 'none' }}>Sign in →</Link>
       </div>
     </main>
@@ -60,8 +75,15 @@ export default function UpdatePassword() {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 64px', background: 'var(--offwhite)' }}>
         <div style={{ width: '100%', maxWidth: 400 }}>
-          <h2 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>New password</h2>
+          <h2 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>Set new password</h2>
           <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 32 }}>Enter and confirm your new password below.</p>
+
+          {!ready && (
+            <div style={{ fontSize: 14, color: 'var(--muted)', padding: '16px', background: 'var(--mint)', borderRadius: 10, marginBottom: 20 }}>
+              ⏳ Verifying your reset link...
+            </div>
+          )}
+
           <form onSubmit={updatePassword} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>New password</label>
@@ -72,7 +94,7 @@ export default function UpdatePassword() {
               <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Repeat your password" required style={{ width: '100%', padding: '11px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}/>
             </div>
             {error && <div style={{ fontSize: 13, color: '#e8413e', background: 'rgba(232,65,62,0.08)', padding: '10px 14px', borderRadius: 8 }}>{error}</div>}
-            <button type="submit" disabled={loading} style={{ width: '100%', padding: 13, fontSize: 15, fontWeight: 500, color: '#fff', background: loading ? 'var(--muted)' : 'var(--forest)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+            <button type="submit" disabled={loading || !ready} style={{ width: '100%', padding: 13, fontSize: 15, fontWeight: 500, color: '#fff', background: loading || !ready ? 'var(--muted)' : 'var(--forest)', border: 'none', borderRadius: 10, cursor: loading || !ready ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
               {loading ? 'Updating…' : 'Update password →'}
             </button>
           </form>
