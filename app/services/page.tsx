@@ -102,14 +102,21 @@ export default function Services() {
   const getVariantName = (service: typeof services[0]) => service.variants[getVariantIndex(service.id)].name
 
   const addToCart = (service: typeof services[0]) => {
-    setCart(prev => ({
-      ...prev,
+    const newCart = {
+      ...cart,
       [service.id]: { name: service.name, icon: service.icon, price: getPrice(service), variant: getVariantName(service) }
-    }))
+    }
+    setCart(newCart)
+    localStorage.setItem('se_cart', JSON.stringify(newCart))
   }
 
   const removeFromCart = (id: string) => {
-    setCart(prev => { const next = { ...prev }; delete next[id]; return next })
+    setCart(prev => {
+      const next = { ...prev }
+      delete next[id]
+      localStorage.setItem('se_cart', JSON.stringify(next))
+      return next
+    })
   }
 
   const cartItems = Object.entries(cart)
