@@ -113,6 +113,32 @@ try {
       console.error('Error saving order:', error)
     }
   }
-
+// Send confirmation email immediately
+if (customerEmail) {
+  try {
+    await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: customerEmail,
+        subject: `Order received — StudentEssentials 🎉`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #1a3a2a; padding: 32px; border-radius: 16px; text-align: center; margin-bottom: 24px;">
+              <h1 style="color: #fff; margin: 0;">Pack Smart. Land Ready. ✅</h1>
+            </div>
+            <div style="background: #f5f0e8; padding: 32px; border-radius: 16px;">
+              <h2 style="color: #1a3a2a;">Your order is being processed!</h2>
+              <p style="color: #6b7a72; line-height: 1.7;">Thank you for ordering with StudentEssentials. We are processing your payment and will confirm your order shortly.</p>
+              <p style="color: #6b7a72;">Questions? Email <a href="mailto:care@student-essentials.com" style="color: #2e7d52;">care@student-essentials.com</a></p>
+            </div>
+          </div>
+        `,
+      }),
+    })
+  } catch (e) {
+    console.error('Email error:', e)
+  }
+}
   return NextResponse.json({ received: true })
 }
