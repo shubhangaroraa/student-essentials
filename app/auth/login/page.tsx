@@ -44,7 +44,7 @@ export default function Login() {
         </Link>
         <div style={{ position: 'relative', zIndex: 2 }}>
           <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--sage)', marginBottom: 16 }}>Welcome back</div>
-          <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 38, fontWeight: 500, color: '#fff', lineHeight: 1.15, marginBottom: 16 }}>
+          <h1 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 38, fontWeight: 500, color: '#fff', lineHeight: 1.15, marginBottom: 16 }}>
             Pack Smart.<br/><em style={{ color: 'var(--sage)' }}>Land Ready.</em>
           </h1>
           <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 340 }}>
@@ -56,7 +56,7 @@ export default function Login() {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 64px', background: 'var(--offwhite)' }}>
         <div style={{ width: '100%', maxWidth: 400 }}>
-          <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>Sign in</h2>
+          <h2 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>Sign in</h2>
           <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 28 }}>Welcome back — let's pick up where you left off.</p>
 
           <button onClick={signInWithGoogle} style={{ width: '100%', padding: '12px 20px', fontSize: 14, color: 'var(--ink)', background: '#fff', border: '0.5px solid rgba(26,26,26,0.15)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 20, fontFamily: 'DM Sans, sans-serif', fontWeight: 400 }}>
@@ -81,7 +81,10 @@ export default function Login() {
               <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="priya@example.com" required style={{ width: '100%', padding: '11px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}/>
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Password</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--moss)' }}>Password</label>
+                <Link href="/auth/reset" style={{ fontSize: 12, color: 'var(--muted)', textDecoration: 'none' }}>Forgot password?</Link>
+              </div>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password" required style={{ width: '100%', padding: '11px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}/>
             </div>
             {error && <div style={{ fontSize: 13, color: '#e8413e', background: 'rgba(232,65,62,0.08)', padding: '10px 14px', borderRadius: 8 }}>{error}</div>}
