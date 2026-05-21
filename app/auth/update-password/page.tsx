@@ -11,19 +11,13 @@ export default function UpdatePassword() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
-  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
-    // Handle the auth session from the URL hash
-    supabase.auth.onAuthStateChange(async (event, session) => {
+    supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
-        setReady(true)
+        // ready to update
       }
-    })
-    // Also check if already has session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true)
     })
   }, [])
 
@@ -77,13 +71,6 @@ export default function UpdatePassword() {
         <div style={{ width: '100%', maxWidth: 400 }}>
           <h2 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>Set new password</h2>
           <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 32 }}>Enter and confirm your new password below.</p>
-
-          {!ready && (
-            <div style={{ fontSize: 14, color: 'var(--muted)', padding: '16px', background: 'var(--mint)', borderRadius: 10, marginBottom: 20 }}>
-              ⏳ Verifying your reset link...
-            </div>
-          )}
-
           <form onSubmit={updatePassword} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>New password</label>
@@ -94,7 +81,7 @@ export default function UpdatePassword() {
               <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Repeat your password" required style={{ width: '100%', padding: '11px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}/>
             </div>
             {error && <div style={{ fontSize: 13, color: '#e8413e', background: 'rgba(232,65,62,0.08)', padding: '10px 14px', borderRadius: 8 }}>{error}</div>}
-            <button type="submit" disabled={loading || !ready} style={{ width: '100%', padding: 13, fontSize: 15, fontWeight: 500, color: '#fff', background: loading || !ready ? 'var(--muted)' : 'var(--forest)', border: 'none', borderRadius: 10, cursor: loading || !ready ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+            <button type="submit" disabled={loading} style={{ width: '100%', padding: 13, fontSize: 15, fontWeight: 500, color: '#fff', background: loading ? 'var(--muted)' : 'var(--forest)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
               {loading ? 'Updating…' : 'Update password →'}
             </button>
           </form>
