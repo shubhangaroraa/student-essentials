@@ -1,0 +1,84 @@
+'use client'
+import { useState } from 'react'
+import { createClient } from '@/lib/supabase'
+import Link from 'next/link'
+
+export default function ResetPassword() {
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState('')
+
+  const sendReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const supabase = createClient()
+    setLoading(true)
+    setError('')
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/update-password`,
+    })
+    if (error) { setError(error.message); setLoading(false) }
+    else setSent(true)
+  }
+
+  if (sent) return (
+    <main style={{ minHeight: '100vh', background: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px' }}>
+      <div style={{ textAlign: 'center', maxWidth: 400 }}>
+        <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, margin: '0 auto 20px' }}>📧</div>
+        <h2 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, color: 'var(--bottle)', marginBottom: 10 }}>Check your email</h2>
+        <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 24 }}>We sent a password reset link to <strong>{email}</strong>. Click it to set a new password.</p>
+        <Link href="/auth/login" style={{ fontSize: 14, color: 'var(--forest)', fontWeight: 500, textDecoration: 'none' }}>← Back to login</Link>
+      </div>
+    </main>
+  )
+
+  return (
+    <main style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: '100vh' }}>
+      <div style={{ background: 'var(--bottle)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '40px 48px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', width: 340, height: 340, borderRadius: '50%', background: 'rgba(46,125,82,0.35)', top: -80, right: -80, filter: 'blur(80px)' }}></div>
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', position: 'relative', zIndex: 2 }}>
+          <div style={{ width: 32, height: 32, background: 'var(--forest)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg viewBox="0 0 20 20" fill="none" width="18" height="18">
+              <path d="M10 2L3 6V10C3 13.5 6.5 17 10 18C13.5 17 17 13.5 17 10V6L10 2Z" fill="white"/>
+              <path d="M7 10L9 12L13 8" stroke="#2e7d52" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <span style={{ fontSize: 15, fontWeight: 500, color: '#fff' }}>Student<span style={{ color: 'var(--sage)' }}>Essentials</span></span>
+        </Link>
+        <div style={{ position: 'relative', zIndex: 2 }}>
+          <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--sage)', marginBottom: 16 }}>Account recovery</div>
+          <h1 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 38, fontWeight: 500, color: '#fff', lineHeight: 1.15, marginBottom: 16 }}>
+            Reset your<br/><em style={{ color: 'var(--sage)' }}>password.</em>
+          </h1>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 340 }}>
+            Enter your email and we will send you a link to set a new password.
+          </p>
+        </div>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', position: 'relative', zIndex: 2 }}>© 2026 StudentEssentials</div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 64px', background: 'var(--offwhite)' }}>
+        <div style={{ width: '100%', maxWidth: 400 }}>
+          <h2 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>Forgot password?</h2>
+          <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 32 }}>No worries — we will send you reset instructions.</p>
+
+          <form onSubmit={sendReset} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Email address</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="priya@example.com" required style={{ width: '100%', padding: '11px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}/>
+            </div>
+            {error && <div style={{ fontSize: 13, color: '#e8413e', background: 'rgba(232,65,62,0.08)', padding: '10px 14px', borderRadius: 8 }}>{error}</div>}
+            <button type="submit" disabled={loading} style={{ width: '100%', padding: 13, fontSize: 15, fontWeight: 500, color: '#fff', background: loading ? 'var(--muted)' : 'var(--forest)', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+              {loading ? 'Sending…' : 'Send reset link →'}
+            </button>
+          </form>
+
+          <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--muted)', marginTop: 24 }}>
+            Remember your password?{' '}
+            <Link href="/auth/login" style={{ color: 'var(--forest)', fontWeight: 500, textDecoration: 'none' }}>Sign in</Link>
+          </div>
+        </div>
+      </div>
+    </main>
+  )
+}
