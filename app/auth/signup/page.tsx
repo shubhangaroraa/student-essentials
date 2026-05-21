@@ -38,22 +38,35 @@ export default function Signup() {
       return
     }
 
-    // If user already exists, try signing in directly
     if (data?.user?.identities?.length === 0) {
       setError('An account with this email already exists. Please sign in instead.')
       setLoading(false)
       return
     }
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
 
     if (signInError) {
       setError(signInError.message)
       setLoading(false)
       return
+    }
+
+    // Create CRM student record
+    if (data?.user) {
+      try {
+        await fetch('/api/crm/create-student', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: data.user.id,
+            first_name: firstName,
+            email: email,
+          }),
+        })
+      } catch (e) {
+        console.error('CRM create error:', e)
+      }
     }
 
     router.push('/dashboard')
@@ -74,29 +87,22 @@ export default function Signup() {
         </Link>
         <div style={{ position: 'relative', zIndex: 2 }}>
           <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--sage)', marginBottom: 16 }}>Join 10,000+ students</div>
-          <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 38, fontWeight: 500, color: '#fff', lineHeight: 1.15, marginBottom: 16 }}>
+          <h1 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 38, fontWeight: 500, color: '#fff', lineHeight: 1.15, marginBottom: 16 }}>
             Your UK life<br/><em style={{ color: 'var(--sage)' }}>starts here.</em>
           </h1>
           <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.7, maxWidth: 340 }}>
-            Create a free account and build your pre-departure pack in minutes.
+            Join thousands of international students who sorted their UK life before they boarded the plane.
           </p>
-          <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {['Bedding delivered before you arrive', 'SIM card activated before you board', 'Airport transfer pre-booked', 'Lowest remittance rates guaranteed'].map(perk => (
-              <div key={perk} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
-                <span style={{ color: 'var(--sage)' }}>✓</span> {perk}
-              </div>
-            ))}
-          </div>
         </div>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', position: 'relative', zIndex: 2 }}>© 2026 StudentEssentials</div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 64px', background: 'var(--offwhite)' }}>
         <div style={{ width: '100%', maxWidth: 400 }}>
-          <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>Create account</h2>
+          <h2 style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 26, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>Create account</h2>
           <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 28 }}>Free to join. No credit card needed.</p>
 
-          <button onClick={signInWithGoogle} style={{ width: '100%', padding: '12px 20px', fontSize: 14, color: 'var(--ink)', background: '#fff', border: '0.5px solid rgba(26,26,26,0.15)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 20, fontFamily: 'DM Sans, sans-serif', fontWeight: 400 }}>
+          <button onClick={signInWithGoogle} style={{ width: '100%', padding: '12px 20px', fontSize: 14, color: 'var(--bottle)', background: '#fff', border: '0.5px solid rgba(26,26,26,0.15)', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 20, fontFamily: 'DM Sans, sans-serif' }}>
             <svg width="18" height="18" viewBox="0 0 18 18">
               <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
               <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
