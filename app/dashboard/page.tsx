@@ -6,13 +6,6 @@ import { useRouter } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
 
-const orders = [
-  { id: 'SE-2026-48201', services: 'Bedding & Kitchen Pack', icon: '🛏️', amount: 89, status: 'Confirmed', date: '13 May 2026' },
-  { id: 'SE-2026-48202', services: 'UK SIM Card', icon: '📱', amount: 14, status: 'Dispatched', date: '13 May 2026' },
-  { id: 'SE-2026-48203', services: 'Airport Transfer', icon: '🚗', amount: 45, status: 'Booked', date: '13 May 2026' },
-  { id: 'SE-2026-48204', services: 'Travel Insurance', icon: '🛡️', amount: 32, status: 'Active', date: '13 May 2026' },
-]
-
 const checklist = [
   { icon: '🛏️', name: 'Bedding & Kitchen Pack', sub: 'Delivery scheduled for 13 Sep', status: 'Confirmed', done: true },
   { icon: '📱', name: 'UK SIM Card', sub: 'Dispatched · arrives in 3 days', status: 'Dispatched', done: true },
@@ -33,12 +26,23 @@ export default function Dashboard() {
   const [daysLeft, setDaysLeft] = useState(0)
   const [remiAmount, setRemiAmount] = useState(50000)
   const [copied, setCopied] = useState(false)
+  const [realOrders, setRealOrders] = useState<any[]>([])
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { router.push('/auth/login'); return }
       setUser({ email: user.email ?? '', firstName: user.user_metadata?.first_name ?? user.email?.split('@')[0] ?? 'there' })
+
+      const { data: ordersData } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (ordersData && ordersData.length > 0) {
+        setRealOrders(ordersData)
+      }
     })
     const arrival = new Date('2026-09-15')
     setDaysLeft(Math.max(0, Math.ceil((arrival.getTime() - Date.now()) / 86400000)))
@@ -132,7 +136,12 @@ export default function Dashboard() {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 24 }}>
-                {[['📦', '4', 'Services ordered'], ['✅', '3', 'Confirmed'], ['💷', '£180', 'Total spent'], ['🎯', '71%', 'Pack complete']].map(([icon, val, label]) => (
+                {[
+                  ['📦', String(realOrders.length || 0), 'Orders placed'],
+                  ['✅', String(realOrders.filter(o => o.status === 'confirmed').length || 0), 'Confirmed'],
+                  ['💷', `£${realOrders.reduce((s, o) => s + (o.total_gbp || 0), 0).toFixed(0)}`, 'Total spent'],
+                  ['🎯', '71%', 'Pack complete'],
+                ].map(([icon, val, label]) => (
                   <div key={label} style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
                     <div style={{ fontSize: 20, marginBottom: 10 }}>{icon}</div>
                     <div style={{ fontFamily: 'Georgia, serif', fontSize: 26, color: 'var(--bottle)', lineHeight: 1 }}>{val}</div>
@@ -171,8 +180,8 @@ export default function Dashboard() {
                   <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
                     <div style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>Quick actions</div>
                     <div style={{ padding: '14px 22px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      {[['✨', 'Add service', 'Browse all 7', '/services'], ['💸', 'Send money', '0.4% fee', '#'], ['📦', 'Track orders', '4 active', '#'], ['🎁', 'Refer friend', 'Earn £10', '#']].map(([icon, label, sub, href]) => (
-                        <div key={label} onClick={() => { if (label === 'Send money') setPage('remittance'); if (label === 'Track orders') setPage('orders'); if (label === 'Refer friend') setPage('referrals'); }} style={{ padding: '12px', borderRadius: 10, border: '0.5px solid var(--border)', background: 'var(--cream)', cursor: 'pointer' }}>
+                      {[['✨', 'Add service', 'Browse all 7'], ['💸', 'Send money', '0.4% fee'], ['📦', 'Track orders', `${realOrders.length} orders`], ['🎁', 'Refer friend', 'Earn £10']].map(([icon, label, sub]) => (
+                        <div key={label} onClick={() => { if (label === 'Send money') setPage('remittance'); if (label === 'Track orders') setPage('orders'); if (label === 'Refer friend') setPage('referrals'); if (label === 'Add service') router.push('/services') }} style={{ padding: '12px', borderRadius: 10, border: '0.5px solid var(--border)', background: 'var(--cream)', cursor: 'pointer' }}>
                           <span style={{ fontSize: 20, display: 'block', marginBottom: 6 }}>{icon}</span>
                           <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', display: 'block' }}>{label}</span>
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{sub}</span>
@@ -184,15 +193,17 @@ export default function Dashboard() {
                   <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
                     <div style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>Notifications</div>
                     <div style={{ padding: '8px 22px' }}>
-                      {[['SIM card dispatched. Expected in 3 days.', '2h ago', true], ['Bedding pack confirmed for 13 Sep.', 'Yesterday', true], ['You saved £48 with the bundle.', '3 days ago', false]].map(([text, time, unread]) => (
-                        <div key={text as string} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: '0.5px solid var(--border)' }}>
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: unread ? 'var(--forest)' : 'var(--border)', flexShrink: 0, marginTop: 5 }}></div>
+                      {realOrders.length > 0 ? realOrders.slice(0,3).map((order) => (
+                        <div key={order.id} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: '0.5px solid var(--border)' }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--forest)', flexShrink: 0, marginTop: 5 }}></div>
                           <div>
-                            <div style={{ fontSize: 13, color: 'var(--bottle)', lineHeight: 1.5 }}>{text}</div>
-                            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{time}</div>
+                            <div style={{ fontSize: 13, color: 'var(--bottle)', lineHeight: 1.5 }}>Order {order.reference} — {order.status}</div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
                           </div>
                         </div>
-                      ))}
+                      )) : (
+                        <div style={{ padding: '16px 0', fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>No notifications yet</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -206,15 +217,23 @@ export default function Dashboard() {
               <div style={{ fontFamily: 'Georgia, serif', fontSize: 22, color: 'var(--bottle)', marginBottom: 4 }}>My Orders</div>
               <div style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 24 }}>Track and manage all your services.</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {orders.map(order => (
+                {realOrders.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--muted)' }}>
+                    <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
+                    <div style={{ fontSize: 15, marginBottom: 8 }}>No orders yet</div>
+                    <Link href="/services" style={{ fontSize: 14, color: 'var(--forest)', fontWeight: 500, textDecoration: 'none' }}>Browse services →</Link>
+                  </div>
+                ) : realOrders.map(order => (
                   <div key={order.id} style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 14, padding: '18px 22px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{order.icon}</div>
+                    <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>📦</div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>{order.services}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Ordered {order.date} · <span style={{ fontFamily: 'monospace' }}>{order.id}</span></div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>{order.reference}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                        {new Date(order.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </div>
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: 'var(--mint)', color: 'var(--forest)' }}>{order.status}</span>
-                    <div style={{ fontFamily: 'Georgia, serif', fontSize: 20, color: 'var(--bottle)' }}>£{order.amount}</div>
+                    <span style={{ fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 20, background: 'var(--mint)', color: 'var(--forest)', textTransform: 'capitalize' }}>{order.status}</span>
+                    <div style={{ fontFamily: 'Georgia, serif', fontSize: 20, color: 'var(--bottle)' }}>£{order.total_gbp}</div>
                   </div>
                 ))}
               </div>
