@@ -696,8 +696,9 @@ export default function CRM() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                 <div style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 22, color: 'var(--bottle)' }}>Team & Access Control</div>
-                <button style={{ padding: '8px 18px', fontSize: 13, fontWeight: 500, background: 'var(--forest)', color: '#fff', border: 'none', borderRadius: 40, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>+ Invite member</button>
+                <button onClick={() => setShowInviteModal(true)} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 500, background: 'var(--forest)', color: '#fff', border: 'none', borderRadius: 40, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>+ Invite member</button>
               </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
                 <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
                   <div style={{ padding: '14px 18px', borderBottom: '0.5px solid var(--border)', fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>Role permissions</div>
@@ -710,7 +711,7 @@ export default function CRM() {
                       { role: 'agent',   perms: ['Own students only', 'Commission data', 'Referral tools'] },
                     ].map(r => (
                       <div key={r.role} style={{ padding: '12px 0', borderBottom: '0.5px solid var(--border)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                        <div style={{ marginBottom: 6 }}>
                           <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 10px', borderRadius: 20, background: roleColors[r.role].bg, color: roleColors[r.role].color }}>{r.role.charAt(0).toUpperCase() + r.role.slice(1)}</span>
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -720,6 +721,57 @@ export default function CRM() {
                     ))}
                   </div>
                 </div>
+
+                <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+                  <div style={{ padding: '14px 18px', borderBottom: '0.5px solid var(--border)', fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>
+                    Team members · {crmUsers.length}
+                  </div>
+                  {crmUsersLoading ? (
+                    <div style={{ padding: '32px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>Loading team...</div>
+                  ) : crmUsers.length === 0 ? (
+                    <div style={{ padding: '32px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                      No team members yet. <button onClick={() => setShowInviteModal(true)} style={{ color: 'var(--forest)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>Invite someone →</button>
+                    </div>
+                  ) : crmUsers.map((member: any, i: number) => (
+                    <div key={member.id} style={{ padding: '14px 18px', borderBottom: '0.5px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, background: i % 2 === 0 ? 'transparent' : 'rgba(26,58,42,.02)' }}>
+                      <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 500, color: 'var(--forest)', flexShrink: 0 }}>{member.full_name[0]}</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)' }}>{member.full_name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{member.email}</div>
+                        {member.signature && <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', marginTop: 2 }}>{member.signature}</div>}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                        <select
+                          value={member.role}
+                          onChange={async e => {
+                            const newRole = e.target.value
+                            await supabase.from('crm_users').update({ role: newRole }).eq('id', member.id)
+                            setCrmUsers(prev => prev.map((u: any) => u.id === member.id ? { ...u, role: newRole } : u))
+                          }}
+                          style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 20, background: roleColors[member.role]?.bg || 'var(--cream)', color: roleColors[member.role]?.color || 'var(--muted)', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', outline: 'none' }}
+                        >
+                          {['admin', 'manager', 'sales', 'support', 'agent'].map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                        <button
+                          onClick={async () => {
+                            const newActive = !member.is_active
+                            await supabase.from('crm_users').update({ is_active: newActive }).eq('id', member.id)
+                            setCrmUsers(prev => prev.map((u: any) => u.id === member.id ? { ...u, is_active: newActive } : u))
+                          }}
+                          style={{ fontSize: 10, color: member.is_active ? 'var(--forest)' : '#e8413e', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'DM Sans, sans-serif' }}
+                        >
+                          {member.is_active ? '● Active' : '● Inactive'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ padding: '14px 18px' }}>
+                    <button onClick={() => setShowInviteModal(true)} style={{ width: '100%', padding: '10px', fontSize: 13, color: 'var(--forest)', border: '0.5px dashed rgba(46,125,82,.4)', borderRadius: 10, background: 'transparent', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>+ Invite new team member</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
                 <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
                   <div style={{ padding: '14px 18px', borderBottom: '0.5px solid var(--border)', fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>Team members</div>
