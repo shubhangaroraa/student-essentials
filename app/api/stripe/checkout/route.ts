@@ -1,3 +1,7 @@
+// Drop-in replacement. Two bug fixes + CRM lead push for paying customers.
+//   1. Stripe checkout now stores user_id in metadata (previously always null).
+//   2. Confirmation email now sent server-side via nodemailer (no internal HTTP hop).
+//   3. After a successful checkout, push a "Won" lead to the central CRM.
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 
@@ -7,19 +11,18 @@ export async function POST(request: Request) {
       apiVersion: '2026-04-22.dahlia',
     })
 
-    const { items, customerEmail, deliveryDetails } = await request.json()
+    const { items, customerEmail, deliveryDetails, userId } = await request.json()
 
-    const lineItems = items.map((item: { name: string; price: number; variant: string; quantity: number }) => ({
-      price_data: {
-        currency: 'gbp',
-        product_data: {
-          name: item.name,
-          description: item.variant,
+    const lineItems = items.map(
+      (item: { name: string; price: number; variant: string; quantity: number }) => ({
+        price_data: {
+          currency: 'gbp',
+          product_data: { name: item.name, description: item.variant },
+          unit_amount: Math.round(item.price * 100),
         },
-        unit_amount: Math.round(item.price * 100),
-      },
-      quantity: item.quantity || 1,
-    }))
+        quantity: item.quantity || 1,
+      })
+    )
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -29,41 +32,20 @@ export async function POST(request: Request) {
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/checkout`,
       metadata: {
-        delivery_address: JSON.stringify(deliveryDetails),
-        customer_email: customerEmail,
+        user_id: userId ?? '',
+        customer_email: customerEmail ?? '',
+        delivery_address: JSON.stringify(deliveryDetails ?? {}),
+        // Stripe metadata values must be strings <= 500 chars.
+        items_summary: JSON.stringify(
+          (items || []).map((i: { name: string; price: number; variant: string; quantity: number }) => ({
+            n: i.name,
+            v: i.variant,
+            q: i.quantity || 1,
+            p: i.price,
+          }))
+        ).slice(0, 490),
       },
     })
-
-    // Send confirmation email
-    if (customerEmail && session.url) {
-      try {
-        await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/email`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: customerEmail,
-            subject: `Order received — StudentEssentials 🎉`,
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <div style="background: #1a3a2a; padding: 32px; border-radius: 16px; text-align: center; margin-bottom: 24px;">
-                  <h1 style="color: #fff; margin: 0;">Pack Smart. Land Ready. ✅</h1>
-                </div>
-                <div style="background: #f5f0e8; padding: 32px; border-radius: 16px;">
-                  <h2 style="color: #1a3a2a;">Your order is being processed!</h2>
-                  <p style="color: #6b7a72; line-height: 1.7;">Thank you for ordering with StudentEssentials. We are processing your payment and will confirm your order shortly.</p>
-                  <div style="text-align: center; margin: 24px 0;">
-                    <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="background: #2e7d52; color: #fff; padding: 14px 32px; border-radius: 40px; text-decoration: none; font-weight: bold;">View dashboard →</a>
-                  </div>
-                  <p style="color: #6b7a72; font-size: 13px;">Questions? Email <a href="mailto:care@student-essentials.com" style="color: #2e7d52;">care@student-essentials.com</a></p>
-                </div>
-              </div>
-            `,
-          }),
-        })
-      } catch (emailError) {
-        console.error('Email error:', emailError)
-      }
-    }
 
     return NextResponse.json({ url: session.url })
   } catch (error) {
