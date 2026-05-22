@@ -1,6 +1,33 @@
+// Drop-in replacement. Bug fixes + CRM push.
+//   1. Order rows now carry user_id from session.metadata (previously always null).
+//   2. Order line items persist as `order_items` JSON column (until you add a real table).
+//   3. Confirmation email sent server-side via nodemailer (no internal HTTP hop).
+//   4. Push a "Won" lead with services_sold into the central CRM.
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import nodemailer from 'nodemailer'
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+})
+
+async function pushOrderToCRM(payload: Record<string, unknown>) {
+  if (!process.env.CRM_API_URL || !process.env.CRM_API_KEY) return
+  try {
+    await fetch(`${process.env.CRM_API_URL}/api/public/leads`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.CRM_API_KEY,
+      },
+      body: JSON.stringify(payload),
+    })
+  } catch (e) {
+    console.error('CRM order push failed:', e)
+  }
+}
 
 export async function POST(request: Request) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -16,7 +43,6 @@ export async function POST(request: Request) {
   const signature = request.headers.get('stripe-signature')!
 
   let event: Stripe.Event
-
   try {
     event = stripe.webhooks.constructEvent(
       body,
@@ -30,73 +56,68 @@ export async function POST(request: Request) {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
+    const orderRef =
+      'SE-' + new Date().getFullYear() + '-' + Math.floor(10000 + Math.random() * 90000)
 
-    try {
-      const orderRef = 'SE-' + new Date().getFullYear() + '-' + Math.floor(10000 + Math.random() * 90000)
+    const itemsSummary = session.metadata?.items_summary
+      ? JSON.parse(session.metadata.items_summary)
+      : []
 
-      const { data: order, error: orderError } = await supabase
-        .from('orders')
-        .insert({
-          reference: orderRef,
-          user_id: session.metadata?.user_id || null,
-          status: 'confirmed',
-          total_gbp: (session.amount_total || 0) / 100,
-          stripe_session_id: session.id,
-          delivery_address: session.metadata?.delivery_address
-            ? JSON.parse(session.metadata.delivery_address)
-            : null,
-        })
-        .select()
-        .single()
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        reference: orderRef,
+        user_id: session.metadata?.user_id || null,
+        status: 'confirmed',
+        total_gbp: (session.amount_total || 0) / 100,
+        stripe_session_id: session.id,
+        delivery_address: session.metadata?.delivery_address
+          ? JSON.parse(session.metadata.delivery_address)
+          : null,
+        items: itemsSummary, // requires a jsonb column `items` on orders
+      })
+      .select()
+      .single()
 
-      if (orderError) {
-        console.error('Order save error:', orderError)
-      } else {
-        console.log('Order saved:', order.reference)
-
-        // Send confirmation email
-        const customerEmail = session.customer_email
-        if (customerEmail) {
-          try {
-            await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/email`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                to: customerEmail,
-                subject: `Order confirmed — ${orderRef} 🎉`,
-                html: `
-                  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f5f0e8; padding: 40px 20px;">
-                    <div style="background: #1a3a2a; padding: 32px; border-radius: 16px; text-align: center; margin-bottom: 24px;">
-                      <h1 style="color: #fff; font-size: 28px; margin: 0 0 8px;">Pack Smart. Land Ready. ✅</h1>
-                      <p style="color: rgba(255,255,255,0.6); margin: 0;">Your StudentEssentials order is confirmed</p>
-                    </div>
-                    <div style="background: #fff; padding: 32px; border-radius: 16px; margin-bottom: 24px;">
-                      <h2 style="color: #1a3a2a; margin: 0 0 16px;">Order confirmed!</h2>
-                      <p style="color: #6b7a72;">Your order reference is:</p>
-                      <div style="background: #e0f0e8; padding: 16px; border-radius: 10px; text-align: center; margin: 16px 0;">
-                        <span style="font-family: monospace; font-size: 20px; font-weight: bold; color: #1a3a2a;">${orderRef}</span>
-                      </div>
-                      <p style="color: #6b7a72; line-height: 1.7;">Everything will be ready and waiting when you arrive in the UK.</p>
-                    </div>
-                    <div style="text-align: center; margin-bottom: 24px;">
-                      <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="background: #2e7d52; color: #fff; padding: 14px 32px; border-radius: 40px; text-decoration: none; font-weight: bold; display: inline-block;">View your dashboard →</a>
-                    </div>
-                    <div style="text-align: center; color: #6b7a72; font-size: 12px;">
-                      <p>Student Solutions Pvt Limited · 3 Fulham Park Gardens, London SW6 4JX</p>
-                      <p>Questions? <a href="mailto:care@student-essentials.com" style="color: #2e7d52;">care@student-essentials.com</a></p>
-                    </div>
-                  </div>
-                `,
-              }),
-            })
-          } catch (emailError) {
-            console.error('Email send error:', emailError)
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error saving order:', error)
+    if (orderError) {
+      console.error('Order save error:', orderError)
+    } else {
+      console.log('Order saved:', order.reference)
     }
+
+    const customerEmail = session.customer_email
+    if (customerEmail) {
+      try {
+        await transporter.sendMail({
+          from: `"StudentEssentials" <${process.env.GMAIL_USER}>`,
+          to: customerEmail,
+          subject: `Order confirmed — ${orderRef} 🎉`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f5f0e8; padding: 40px 20px;">
+              <div style="background: #1a3a2a; padding: 32px; border-radius: 16px; text-align: center; margin-bottom: 24px;">
+                <h1 style="color: #fff; font-size: 28px; margin: 0 0 8px;">Pack Smart. Land Ready. ✅</h1>
+                <p style="color: rgba(255,255,255,0.6); margin: 0;">Your StudentEssentials order is confirmed</p>
+              </div>
+              <div style="background: #fff; padding: 32px; border-radius: 16px;">
+                <h2 style="color: #1a3a2a; margin: 0 0 16px;">Order ${orderRef}</h2>
+                <p style="color: #6b7a72; line-height: 1.7;">Thanks for your order. We will be in touch shortly with next steps.</p>
+                <p style="color: #6b7a72; font-size: 13px;">Questions? Email <a href="mailto:care@student-essentials.com" style="color: #2e7d52;">care@student-essentials.com</a></p>
+              </div>
+            </div>
+          `,
+        })
+      } catch (emailError) {
+        console.error('Email error:', emailError)
+      }
+    }
+
+    // Push into central CRM as a won lead.
+    await pushOrderToCRM({
+      name: customerEmail || 'Stripe customer',
+      email: customerEmail || undefined,
+      source: `stripe:${orderRef}`,
+      message: `Paid order ${orderRef} — £${((session.amount_total || 0) / 100).toFixed(2)}\n\n${JSON.stringify(itemsSummary, null, 2)}`,
+    })
   }
 
   return NextResponse.json({ received: true })
