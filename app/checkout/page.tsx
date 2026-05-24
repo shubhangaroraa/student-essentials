@@ -36,30 +36,23 @@ export default function Checkout() {
   }
 
   const placeOrder = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: cartItems,
-          customerEmail: form.email,
-          deliveryDetails: form,
-        }),
-      })
-      const data = await response.json()
-      if (data.url) {
-        localStorage.removeItem('se_cart')
-        window.location.href = data.url
-      } else {
-        setLoading(false)
-        alert('Payment failed — please try again.')
-      }
-    } catch (error) {
-      setLoading(false)
-      alert('Something went wrong — please try again.')
-    }
-  }
+  setLoading(true)
+  try {
+    // Get current user id
+    const { createClient } = await import('@/lib/supabase')
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    const response = await fetch('/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: cartItems,
+        customerEmail: form.email,
+        deliveryDetails: form,
+        userId: user?.id ?? null,
+      }),
+    })
 
   return (
     <div style={{ background: 'var(--cream)', minHeight: '100vh' }}>

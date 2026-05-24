@@ -1,8 +1,8 @@
-// Drop-in replacement. Bug fixes + CRM push.
-//   1. Order rows now carry user_id from session.metadata (previously always null).
-//   2. Order line items persist as `order_items` JSON column (until you add a real table).
-//   3. Confirmation email sent server-side via nodemailer (no internal HTTP hop).
-//   4. Push a "Won" lead with services_sold into the central CRM.
+// Bug fixes + CRM push.
+//   1. Order rows now carry user_id from session.metadata.
+//   2. Order line items persist as `items` jsonb column.
+//   3. Confirmation email sent via nodemailer.
+//   4. Push a "Won" lead into the CRM.
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
@@ -12,22 +12,6 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
 })
-
-async function pushOrderToCRM(payload: Record<string, unknown>) {
-  if (!process.env.CRM_API_URL || !process.env.CRM_API_KEY) return
-  try {
-    await fetch(`${process.env.CRM_API_URL}/api/public/leads`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.CRM_API_KEY,
-      },
-      body: JSON.stringify(payload),
-    })
-  } catch (e) {
-    console.error('CRM order push failed:', e)
-  }
-}
 
 export async function POST(request: Request) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -44,11 +28,7 @@ export async function POST(request: Request) {
 
   let event: Stripe.Event
   try {
-    event = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    )
+    event = stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET!)
   } catch (error) {
     console.error('Webhook signature error:', error)
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
@@ -56,25 +36,28 @@ export async function POST(request: Request) {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
-    const orderRef =
-      'SE-' + new Date().getFullYear() + '-' + Math.floor(10000 + Math.random() * 90000)
+    const orderRef = 'SE-' + new Date().getFullYear() + '-' + Math.floor(10000 + Math.random() * 90000)
 
     const itemsSummary = session.metadata?.items_summary
       ? JSON.parse(session.metadata.items_summary)
       : []
 
+    const serviceNames = itemsSummary.map((i: { name: string }) => i.name).join(', ') || 'Order'
+
+    // ── Save order to Supabase ──
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
         reference: orderRef,
         user_id: session.metadata?.user_id || null,
+        customer_email: session.customer_email || null,
         status: 'confirmed',
         total_gbp: (session.amount_total || 0) / 100,
         stripe_session_id: session.id,
         delivery_address: session.metadata?.delivery_address
           ? JSON.parse(session.metadata.delivery_address)
           : null,
-        items: itemsSummary, // requires a jsonb column `items` on orders
+        items: itemsSummary,
       })
       .select()
       .single()
@@ -82,9 +65,27 @@ export async function POST(request: Request) {
     if (orderError) {
       console.error('Order save error:', orderError)
     } else {
-      console.log('Order saved:', order.reference)
+      console.log('Order saved:', order?.reference)
     }
 
+    // ── Update CRM lead to Won if user exists ──
+    if (session.metadata?.user_id) {
+      await supabase
+        .from('crm_leads')
+        .update({ stage: 'won', updated_at: new Date().toISOString() })
+        .eq('user_id', session.metadata.user_id)
+        .in('stage', ['new', 'contacted', 'qualified', 'proposal'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      // Update student status to active customer
+      await supabase
+        .from('crm_students')
+        .update({ status: 'active' })
+        .eq('user_id', session.metadata.user_id)
+    }
+
+    // ── Confirmation email ──
     const customerEmail = session.customer_email
     if (customerEmail) {
       try {
@@ -99,9 +100,11 @@ export async function POST(request: Request) {
                 <p style="color: rgba(255,255,255,0.6); margin: 0;">Your StudentEssentials order is confirmed</p>
               </div>
               <div style="background: #fff; padding: 32px; border-radius: 16px;">
-                <h2 style="color: #1a3a2a; margin: 0 0 16px;">Order ${orderRef}</h2>
-                <p style="color: #6b7a72; line-height: 1.7;">Thanks for your order. We will be in touch shortly with next steps.</p>
-                <p style="color: #6b7a72; font-size: 13px;">Questions? Email <a href="mailto:care@student-essentials.com" style="color: #2e7d52;">care@student-essentials.com</a></p>
+                <h2 style="color: #1a3a2a; margin: 0 0 8px;">Order ${orderRef}</h2>
+                <p style="color: #6b7a72; margin: 0 0 20px;">You ordered: <strong>${serviceNames}</strong></p>
+                <p style="color: #6b7a72; margin: 0 0 20px;"><strong>Total: £${((session.amount_total || 0) / 100).toFixed(2)}</strong></p>
+                <p style="color: #6b7a72; line-height: 1.7;">We'll be in touch shortly with delivery details and next steps.</p>
+                <p style="color: #6b7a72; font-size: 13px; margin-top: 24px;">Questions? Email <a href="mailto:care@student-essentials.com" style="color: #2e7d52;">care@student-essentials.com</a></p>
               </div>
             </div>
           `,
@@ -110,14 +113,6 @@ export async function POST(request: Request) {
         console.error('Email error:', emailError)
       }
     }
-
-    // Push into central CRM as a won lead.
-    await pushOrderToCRM({
-      name: customerEmail || 'Stripe customer',
-      email: customerEmail || undefined,
-      source: `stripe:${orderRef}`,
-      message: `Paid order ${orderRef} — £${((session.amount_total || 0) / 100).toFixed(2)}\n\n${JSON.stringify(itemsSummary, null, 2)}`,
-    })
   }
 
   return NextResponse.json({ received: true })
