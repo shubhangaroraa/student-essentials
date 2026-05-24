@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase'
 
 type CartItem = { id: string; name: string; icon: string; price: number; variant: string }
 
@@ -11,11 +12,8 @@ export default function Checkout() {
   const [promo, setPromo] = useState('')
   const [discount, setDiscount] = useState(0)
   const [promoMsg, setPromoMsg] = useState('')
-  const [payMethod, setPayMethod] = useState('card')
   const [form, setForm] = useState({ fname: '', lname: '', email: '', phone: '', uni: '', room: '', street: '', city: '', postcode: '', arrival: '', notes: '' })
-  const [card, setCard] = useState({ name: '', number: '', expiry: '', cvv: '', postcode: '' })
   const [loading, setLoading] = useState(false)
-  const [orderRef] = useState('SE-2026-' + Math.floor(10000 + Math.random() * 90000))
 
   useEffect(() => {
     const saved = localStorage.getItem('se_cart')
@@ -36,23 +34,33 @@ export default function Checkout() {
   }
 
   const placeOrder = async () => {
-  setLoading(true)
-  try {
-    // Get current user id
-    const { createClient } = await import('@/lib/supabase')
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    const response = await fetch('/api/stripe/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: cartItems,
-        customerEmail: form.email,
-        deliveryDetails: form,
-        userId: user?.id ?? null,
-      }),
-    })
+    setLoading(true)
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      const response = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: cartItems,
+          customerEmail: form.email,
+          deliveryDetails: form,
+          userId: user?.id ?? null,
+        }),
+      })
+      const data = await response.json()
+      if (data.url) {
+        localStorage.removeItem('se_cart')
+        window.location.href = data.url
+      } else {
+        setLoading(false)
+        alert('Payment failed — please try again.')
+      }
+    } catch (error) {
+      setLoading(false)
+      alert('Something went wrong — please try again.')
+    }
+  }
 
   return (
     <div style={{ background: 'var(--cream)', minHeight: '100vh' }}>
@@ -73,190 +81,111 @@ export default function Checkout() {
 
       {/* PROGRESS */}
       <div style={{ background: 'var(--offwhite)', borderBottom: '0.5px solid var(--border)', padding: '0 5%' }}>
-        <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', alignItems: 'center', padding: '16px 0' }}>
-          {['Your pack', 'Delivery', 'Payment'].map((label, i) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', flex: i < 2 ? 1 : 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: i + 1 <= step ? 'pointer' : 'default' }} onClick={() => i + 1 < step && setStep(i + 1)}>
-                <div style={{ width: 26, height: 26, borderRadius: '50%', border: `1.5px solid ${i + 1 === step ? 'var(--bottle)' : i + 1 < step ? 'var(--forest)' : 'var(--border)'}`, background: i + 1 === step ? 'var(--bottle)' : i + 1 < step ? 'var(--forest)' : 'transparent', color: i + 1 <= step ? '#fff' : 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500 }}>
-                  {i + 1 < step ? '✓' : i + 1}
-                </div>
-                <span style={{ fontSize: 13, fontWeight: i + 1 === step ? 500 : 400, color: i + 1 === step ? 'var(--bottle)' : 'var(--muted)' }}>{label}</span>
-              </div>
-              {i < 2 && <div style={{ flex: 1, height: '0.5px', background: i + 1 < step ? 'var(--forest)' : 'var(--border)', margin: '0 12px', opacity: 0.4 }}></div>}
+        <div style={{ display: 'flex', gap: 0, maxWidth: 700, margin: '0 auto' }}>
+          {['Your details', 'Review & pay'].map((label, i) => (
+            <div key={label} style={{ padding: '14px 0', marginRight: 32, fontSize: 13, fontWeight: step === i + 1 ? 600 : 400, color: step === i + 1 ? 'var(--forest)' : 'var(--muted)', borderBottom: step === i + 1 ? '2px solid var(--forest)' : '2px solid transparent', cursor: 'pointer' }} onClick={() => i < step && setStep(i + 1)}>
+              {i + 1}. {label}
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 5%', display: 'grid', gridTemplateColumns: '1fr 360px', gap: 32, alignItems: 'start' }}>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 5%', display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, alignItems: 'start' }}>
 
-        {/* LEFT */}
+        {/* LEFT: FORM */}
         <div>
-
-          {/* STEP 1 */}
           {step === 1 && (
-            <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 20, overflow: 'hidden', marginBottom: 20 }}>
-              <div style={{ padding: '18px 28px', borderBottom: '0.5px solid var(--border)', fontSize: 15, fontWeight: 500, color: 'var(--bottle)' }}>🛒 Review your pack</div>
-              <div style={{ padding: '8px 28px' }}>
-                {cartItems.length === 0 ? (
-                  <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>
-                    <div style={{ fontSize: 36, marginBottom: 12 }}>🛒</div>
-                    Your cart is empty. <Link href="/services" style={{ color: 'var(--forest)', textDecoration: 'none', fontWeight: 500 }}>Browse services →</Link>
-                  </div>
-                ) : cartItems.map(item => (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 0', borderBottom: '0.5px solid var(--border)' }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{item.icon}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>{item.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{item.variant}</div>
-                    </div>
-                    <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--bottle)' }}>£{item.price}</div>
+            <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 16, padding: '28px' }}>
+              <div style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 20, color: 'var(--bottle)', marginBottom: 22 }}>Your details</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                {[['First name', 'fname'], ['Last name', 'lname'], ['Email address', 'email'], ['Phone number', 'phone'], ['University', 'uni'], ['Room number', 'room']].map(([label, key]) => (
+                  <div key={key} style={{ marginBottom: 16 }}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>{label}</label>
+                    <input value={form[key as keyof typeof form]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }} />
                   </div>
                 ))}
-                <div style={{ padding: '16px 0' }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Promo / referral code</label>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <input value={promo} onChange={e => setPromo(e.target.value)} placeholder="e.g. STUDENT10" style={{ flex: 1, padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-                    <button onClick={applyPromo} style={{ padding: '10px 20px', fontSize: 13, fontWeight: 500, color: 'var(--forest)', background: 'transparent', border: '0.5px solid rgba(46,125,82,.4)', borderRadius: 10, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Apply</button>
-                  </div>
-                  {promoMsg && <div style={{ fontSize: 12, marginTop: 6, color: discount > 0 ? 'var(--forest)' : '#e8413e' }}>{promoMsg}</div>}
-                </div>
               </div>
-              <div style={{ padding: '16px 28px' }}>
-                <button onClick={() => setStep(2)} disabled={cartItems.length === 0} style={{ width: '100%', padding: 14, fontSize: 15, fontWeight: 500, color: '#fff', background: cartItems.length === 0 ? 'var(--muted)' : 'var(--forest)', border: 'none', borderRadius: 12, cursor: cartItems.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Continue to delivery →</button>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Street address</label>
+                <input value={form.street} onChange={e => setForm(f => ({ ...f, street: e.target.value }))} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }} />
               </div>
-            </div>
-          )}
-
-          {/* STEP 2 */}
-          {step === 2 && (
-            <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 20, overflow: 'hidden', marginBottom: 20 }}>
-              <div style={{ padding: '18px 28px', borderBottom: '0.5px solid var(--border)', fontSize: 15, fontWeight: 500, color: 'var(--bottle)' }}>📦 Delivery details</div>
-              <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  {[['First name', 'fname', 'Priya'], ['Last name', 'lname', 'Sharma']].map(([label, key, ph]) => (
-                    <div key={key}>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>{label}</label>
-                      <input value={form[key as keyof typeof form]} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))} placeholder={ph} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-                    </div>
-                  ))}
-                </div>
-                {[['Email address', 'email', 'priya@example.com', 'email'], ['Phone (WhatsApp)', 'phone', '+44 7700 000000', 'tel'], ['University / accommodation name', 'uni', 'Liberty Living Manchester', 'text'], ['Room number', 'room', 'Room 214, Block B', 'text'], ['Street address', 'street', '12 Oxford Road', 'text']].map(([label, key, ph, type]) => (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px', marginBottom: 16 }}>
+                {[['City', 'city'], ['Postcode', 'postcode']].map(([label, key]) => (
                   <div key={key}>
                     <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>{label}</label>
-                    <input type={type} value={form[key as keyof typeof form]} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))} placeholder={ph} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
+                    <input value={form[key as keyof typeof form]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }} />
                   </div>
                 ))}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  {[['City', 'city', 'Manchester'], ['Postcode', 'postcode', 'M1 3BB']].map(([label, key, ph]) => (
-                    <div key={key}>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>{label}</label>
-                      <input value={form[key as keyof typeof form]} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))} placeholder={ph} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Arrival date</label>
-                  <input type="date" value={form.arrival} onChange={e => setForm(p => ({ ...p, arrival: e.target.value }))} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--moss)' }}>Delivery option</label>
-                  {[['Standard — delivered by arrival day', 'Items arrive 1–2 days before your arrival', 'Free', 0], ['Express — next business day', 'Order before 12pm for next-day delivery', '£12', 12]].map(([name, desc, price, cost]) => (
-                    <div key={name as string} onClick={() => setDelivery(cost as number)} style={{ padding: '14px 18px', borderRadius: 12, border: `0.5px solid ${delivery === cost ? 'var(--forest)' : 'var(--border)'}`, background: delivery === cost ? 'var(--mint)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>{name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{desc}</div>
-                      </div>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--forest)' }}>{price}</div>
-                    </div>
-                  ))}
-                </div>
               </div>
-              <div style={{ padding: '0 28px 24px' }}>
-                <button onClick={() => setStep(3)} style={{ width: '100%', padding: 14, fontSize: 15, fontWeight: 500, color: '#fff', background: 'var(--forest)', border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Continue to payment →</button>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Arrival date</label>
+                <input type="date" value={form.arrival} onChange={e => setForm(f => ({ ...f, arrival: e.target.value }))} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }} />
               </div>
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Notes (optional)</label>
+                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', boxSizing: 'border-box' }} />
+              </div>
+              <button onClick={() => setStep(2)} style={{ width: '100%', padding: 14, fontSize: 15, fontWeight: 500, color: '#fff', background: 'var(--forest)', border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                Continue to payment →
+              </button>
             </div>
           )}
 
-          {/* STEP 3 */}
-          {step === 3 && (
-            <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 20, overflow: 'hidden', marginBottom: 20 }}>
-              <div style={{ padding: '18px 28px', borderBottom: '0.5px solid var(--border)', fontSize: 15, fontWeight: 500, color: 'var(--bottle)' }}>💳 Payment</div>
-              <div style={{ padding: '24px 28px' }}>
-                <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
-                  {[['💳', 'Card', 'card'], ['G', 'Google Pay', 'gpay'], ['🇮🇳', 'UPI', 'upi']].map(([icon, label, id]) => (
-                    <div key={id} onClick={() => setPayMethod(id as string)} style={{ flex: 1, padding: '12px', borderRadius: 10, border: `0.5px solid ${payMethod === id ? 'var(--forest)' : 'var(--border)'}`, background: payMethod === id ? 'var(--mint)' : '#fff', cursor: 'pointer', textAlign: 'center' }}>
-                      <div style={{ fontSize: 20, marginBottom: 4 }}>{icon}</div>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--bottle)' }}>{label}</div>
-                    </div>
-                  ))}
+          {step === 2 && (
+            <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 16, padding: '28px' }}>
+              <div style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 20, color: 'var(--bottle)', marginBottom: 22 }}>Review & pay</div>
+
+              <div style={{ background: 'rgba(26,58,42,.04)', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', marginBottom: 10 }}>Delivery to</div>
+                <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7 }}>
+                  {form.fname} {form.lname} · {form.email}<br />
+                  {form.uni}{form.room ? `, Room ${form.room}` : ''}<br />
+                  {form.street}{form.city ? `, ${form.city}` : ''}{form.postcode ? ` ${form.postcode}` : ''}
                 </div>
-                {payMethod === 'card' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {[['Name on card', 'name', 'PRIYA SHARMA', 'text'], ['Card number', 'number', '1234 5678 9012 3456', 'text']].map(([label, key, ph, type]) => (
-                      <div key={key}>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>{label}</label>
-                        <input type={type} value={card[key as keyof typeof card]} onChange={e => setCard(p => ({ ...p, [key]: e.target.value }))} placeholder={ph} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-                      </div>
-                    ))}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-                      {[['Expiry', 'expiry', 'MM/YY'], ['CVV', 'cvv', '123'], ['Postcode', 'postcode', 'M1 3BB']].map(([label, key, ph]) => (
-                        <div key={key}>
-                          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>{label}</label>
-                          <input value={card[key as keyof typeof card]} onChange={e => setCard(p => ({ ...p, [key]: e.target.value }))} placeholder={ph} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-                        </div>
-                      ))}
+                <button onClick={() => setStep(1)} style={{ fontSize: 12, color: 'var(--forest)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', padding: 0, marginTop: 8 }}>Edit details</button>
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', marginBottom: 10 }}>Your order</div>
+                {cartItems.map(item => (
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '0.5px solid var(--border)' }}>
+                    <div style={{ fontSize: 22 }}>{item.icon}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)' }}>{item.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{item.variant}</div>
                     </div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>£{item.price}</div>
                   </div>
-                )}
-                {payMethod === 'gpay' && <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--muted)', fontSize: 14 }}>Google Pay will open automatically at checkout.</div>}
-                {payMethod === 'upi' && (
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>UPI ID</label>
-                    <input placeholder="yourname@upi" style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Supports PhonePe, GPay, Paytm and all UPI apps</div>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 20, padding: '16px 0', marginTop: 8, borderTop: '0.5px solid var(--border)' }}>
-                  {['🔒 256-bit SSL', '✓ PCI DSS', '🛡️ Stripe', '↩ 14-day returns'].map(b => (
-                    <div key={b} style={{ fontSize: 11, color: 'var(--muted)' }}>{b}</div>
-                  ))}
-                </div>
+                ))}
               </div>
-              <div style={{ padding: '0 28px 24px' }}>
-                <button onClick={placeOrder} disabled={loading} style={{ width: '100%', padding: 14, fontSize: 15, fontWeight: 500, color: '#fff', background: loading ? 'var(--muted)' : 'var(--forest)', border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                  {loading ? '⏳ Redirecting to Stripe…' : `🔒 Pay £${total} securely`}
-                </button>
+
+              <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                <input value={promo} onChange={e => setPromo(e.target.value)} placeholder="Promo code" style={{ flex: 1, padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
+                <button onClick={applyPromo} style={{ padding: '10px 18px', fontSize: 13, fontWeight: 500, background: 'var(--forest)', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Apply</button>
               </div>
+              {promoMsg && <div style={{ fontSize: 12, color: discount > 0 ? 'var(--forest)' : '#ef4444', marginBottom: 16 }}>{promoMsg}</div>}
+
+              <button onClick={placeOrder} disabled={loading} style={{ width: '100%', padding: 14, fontSize: 15, fontWeight: 500, color: '#fff', background: loading ? 'var(--muted)' : 'var(--forest)', border: 'none', borderRadius: 12, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                {loading ? 'Redirecting to Stripe…' : `Pay £${total} securely`}
+              </button>
             </div>
           )}
         </div>
 
-        {/* ORDER SUMMARY */}
-        <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 20, overflow: 'hidden', position: 'sticky', top: 80 }}>
-          <div style={{ padding: '18px 24px', borderBottom: '0.5px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>Your pack</div>
-            <Link href="/services" style={{ fontSize: 12, color: 'var(--forest)', textDecoration: 'none' }}>Edit</Link>
-          </div>
-          <div style={{ padding: '8px 24px' }}>
+        {/* RIGHT: ORDER SUMMARY */}
+        <div style={{ background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 16, overflow: 'hidden', position: 'sticky', top: 80 }}>
+          <div style={{ padding: '18px 24px', borderBottom: '0.5px solid var(--border)', fontFamily: 'Playfair Display, Georgia, serif', fontSize: 16, color: 'var(--bottle)' }}>Order summary</div>
+          <div style={{ padding: '16px 24px' }}>
+            {cartItems.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', padding: '12px 0' }}>No items in cart</div>}
             {cartItems.map(item => (
-              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '0.5px solid var(--border)' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{item.icon}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)' }}>{item.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.variant}</div>
-                </div>
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: 'var(--bottle)' }}>{item.icon} {item.name}</div>
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)' }}>£{item.price}</div>
               </div>
             ))}
-          </div>
-          <div style={{ padding: '16px 24px', borderTop: '0.5px solid var(--border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
-              <span>Subtotal</span><span>£{subtotal}</span>
-            </div>
             {discount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--forest)', marginBottom: 8 }}>
-                <span>Discount</span><span>-£{discount}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--forest)', marginBottom: 12 }}>
+                <span>Discount</span><span>−£{discount}</span>
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
