@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
+// ── Types ──────────────────────────────────────────────────────────
 type Lead = {
   id: string; first_name: string; last_name: string | null; email: string | null
   phone: string | null; university: string | null; country: string | null
@@ -19,7 +20,15 @@ type Student = {
   id: string; first_name: string | null; email: string | null; university: string | null
   country: string | null; status: string; source: string | null; created_at: string
 }
+type ProductVariant = { id: string; name: string; price: number }
+type Product = {
+  id: string; name: string; slug: string; icon: string; category: string
+  description: string; includes: string[]; badge: string | null
+  badge_color: string; active: boolean; images: string[]; sort_order: number
+  product_variants: ProductVariant[]
+}
 
+// ── Mock orders ────────────────────────────────────────────────────
 const MOCK_ORDERS = [
   { ref: 'SE-2026-57168', student: 'Priya Sharma', services: 'Full pack', amount: '£180', status: 'Confirmed', date: '21 May' },
   { ref: 'SE-2026-57102', student: 'Wei Zhang', services: 'Bedding + SIM', amount: '£103', status: 'Dispatched', date: '20 May' },
@@ -32,9 +41,10 @@ const STAGES = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost'] as c
 const STAGE_LABELS: Record<string, string> = { new: 'New', contacted: 'Contacted', qualified: 'Qualified', proposal: 'Proposal', won: 'Won', lost: 'Lost' }
 const STAGE_COLORS: Record<string, string> = { new: '#6366f1', contacted: '#f59e0b', qualified: '#3b82f6', proposal: '#8b5cf6', won: '#10b981', lost: '#ef4444' }
 
-const pages = ['overview', 'crm', 'orders', 'customers', 'ed-partners', 'reports', 'services', 'payouts', 'settings'] as const
+const pages = ['overview', 'crm', 'orders', 'customers', 'ed-partners', 'reports', 'inventory', 'services', 'payouts', 'settings'] as const
 type Page = typeof pages[number]
 
+// ── Style helpers ──────────────────────────────────────────────────
 const S = {
   card: { background: 'var(--offwhite)', border: '0.5px solid var(--border)', borderRadius: 16 } as React.CSSProperties,
   th: { fontSize: 11, fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '.05em', color: 'var(--muted)' },
@@ -51,10 +61,11 @@ function statusBadge(status: string) {
   return <span style={S.badge(color, bg)}>{status.replace('_', ' ')}</span>
 }
 
+// ── Reusable components ────────────────────────────────────────────
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: 'var(--cream)', borderRadius: 18, padding: '32px', width: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,.2)' }}>
+      <div style={{ background: 'var(--cream)', borderRadius: 18, padding: '32px', width: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,.2)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 20, color: 'var(--bottle)' }}>{title}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--muted)' }}>×</button>
@@ -82,19 +93,59 @@ function Btn({ children, onClick, variant = 'primary', style }: { children: Reac
   )
 }
 
+// Variants editor used inside the product modal
+function VariantsEditor({ defaultVariants }: { defaultVariants: { id?: string; name: string; price: number }[] }) {
+  const [variants, setVariants] = useState(defaultVariants.length > 0 ? defaultVariants : [{ name: '', price: 0 }])
+  return (
+    <div>
+      {variants.map((v, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 32px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          <input name="variant_name" value={v.name}
+            onChange={e => setVariants(prev => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+            placeholder="e.g. Standard"
+            style={{ padding: '8px 12px', fontSize: 13, border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 8, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
+          <input name="variant_price" type="number" value={v.price}
+            onChange={e => setVariants(prev => prev.map((x, j) => j === i ? { ...x, price: parseFloat(e.target.value) || 0 } : x))}
+            placeholder="89"
+            style={{ padding: '8px 12px', fontSize: 13, border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 8, outline: 'none', fontFamily: 'DM Sans, sans-serif', textAlign: 'right' }} />
+          <button type="button" onClick={() => setVariants(prev => prev.filter((_, j) => j !== i))}
+            style={{ width: 32, height: 32, borderRadius: 8, background: '#fef2f2', color: '#ef4444', border: 'none', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        </div>
+      ))}
+      <button type="button" onClick={() => setVariants(prev => [...prev, { name: '', price: 0 }])}
+        style={{ fontSize: 12, color: 'var(--forest)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', padding: 0 }}>
+        + Add variant
+      </button>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════
 export default function AdminPanel() {
   const router = useRouter()
   const [page, setPage] = useState<Page>('overview')
   const [user, setUser] = useState<{ email: string; firstName: string } | null>(null)
+
+  // CRM data
   const [leads, setLeads] = useState<Lead[]>([])
   const [partners, setPartners] = useState<EdPartner[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Inventory data
+  const [products, setProducts] = useState<Product[]>([])
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [showNewProduct, setShowNewProduct] = useState(false)
+  const [productSaving, setProductSaving] = useState(false)
+
+  // CRM modal state
   const [showNewLead, setShowNewLead] = useState(false)
   const [showNewPartner, setShowNewPartner] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+
   const dragId = useRef<string | null>(null)
 
+  // ── Auth ──
   useEffect(() => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -103,6 +154,7 @@ export default function AdminPanel() {
     })
   }, [])
 
+  // ── Fetch data on page change ──
   useEffect(() => {
     const supabase = createClient()
     if (page === 'crm' || page === 'overview') {
@@ -118,16 +170,19 @@ export default function AdminPanel() {
       supabase.from('crm_students').select('*').order('created_at', { ascending: false })
         .then(({ data }) => setStudents(data ?? []))
     }
+    if (page === 'inventory') {
+      fetch('/api/inventory').then(r => r.json()).then(d => setProducts(d.items ?? []))
+    }
   }, [page])
 
   const signOut = async () => { const supabase = createClient(); await supabase.auth.signOut(); router.push('/') }
 
+  // ── Lead actions ──
   const moveLead = async (id: string, stage: string) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, stage } : l))
     const supabase = createClient()
     await supabase.from('crm_leads').update({ stage, updated_at: new Date().toISOString() }).eq('id', id)
   }
-
   const createLead = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
@@ -141,13 +196,13 @@ export default function AdminPanel() {
     if (data) setLeads(prev => [data, ...prev])
     setShowNewLead(false)
   }
-
   const updateLeadNotes = async (id: string, notes: string) => {
     const supabase = createClient()
     await supabase.from('crm_leads').update({ notes }).eq('id', id)
     setLeads(prev => prev.map(l => l.id === id ? { ...l, notes } : l))
   }
 
+  // ── Partner actions ──
   const createPartner = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
@@ -161,7 +216,6 @@ export default function AdminPanel() {
     if (data) setPartners(prev => [data, ...prev])
     setShowNewPartner(false)
   }
-
   const handlePartnerAction = async (partner_id: string, action: 'approve' | 'reject') => {
     const res = await fetch('/api/partners/approve', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -173,6 +227,54 @@ export default function AdminPanel() {
     }
   }
 
+  // ── Product save ──
+  const handleProductSave = async (e: React.FormEvent<HTMLFormElement>, prodId: string | null) => {
+    e.preventDefault()
+    setProductSaving(true)
+    const fd = new FormData(e.currentTarget)
+    const includesRaw = fd.get('includes') as string
+    const includes = includesRaw.split('\n').map(s => s.trim()).filter(Boolean)
+    const variantNames = fd.getAll('variant_name') as string[]
+    const variantPrices = fd.getAll('variant_price') as string[]
+    const variants = variantNames.map((name, i) => ({ name, price: parseFloat(variantPrices[i]) || 0 })).filter(v => v.name)
+    const imageUrl = (fd.get('image_url') as string).trim()
+
+    const payload = {
+      name: fd.get('name') as string,
+      slug: (fd.get('slug') as string) || (fd.get('name') as string).toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      icon: fd.get('icon') as string,
+      category: fd.get('category') as string,
+      description: fd.get('description') as string,
+      includes,
+      badge: (fd.get('badge') as string) || null,
+      badge_color: fd.get('badge_color') as string,
+      active: fd.get('active') === 'true',
+      sort_order: parseInt(fd.get('sort_order') as string) || 0,
+      images: imageUrl ? [imageUrl] : [],
+      variants,
+    }
+
+    if (!prodId) {
+      // Create new
+      const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const { product } = await res.json()
+      if (product) {
+        const full = await fetch(`/api/inventory/${product.id}`).then(r => r.json())
+        setProducts(prev => [full, ...prev])
+      }
+    } else {
+      // Update existing
+      await fetch(`/api/inventory/${prodId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const updated = await fetch(`/api/inventory/${prodId}`).then(r => r.json())
+      setProducts(prev => prev.map(p => p.id === prodId ? updated : p))
+    }
+
+    setProductSaving(false)
+    setEditingProduct(null)
+    setShowNewProduct(false)
+  }
+
+  // ── Nav ──
   const navItems: { id: Page; icon: string; label: string; section?: string }[] = [
     { id: 'overview', icon: '📊', label: 'Overview', section: 'Management' },
     { id: 'crm', icon: '🎯', label: 'CRM · Leads', section: '' },
@@ -180,8 +282,9 @@ export default function AdminPanel() {
     { id: 'customers', icon: '🎓', label: 'Customers', section: '' },
     { id: 'ed-partners', icon: '🏫', label: 'Ed-Partners', section: '' },
     { id: 'reports', icon: '📈', label: 'Reports', section: 'Analytics' },
-    { id: 'services', icon: '✨', label: 'Services', section: 'Config' },
-    { id: 'payouts', icon: '💷', label: 'Payouts', section: '' },
+    { id: 'inventory', icon: '🛍️', label: 'Inventory', section: 'Website' },
+    { id: 'services', icon: '✨', label: 'Services', section: '' },
+    { id: 'payouts', icon: '💷', label: 'Payouts', section: 'Config' },
     { id: 'settings', icon: '⚙️', label: 'Settings', section: '' },
   ]
 
@@ -191,7 +294,7 @@ export default function AdminPanel() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--cream)', fontFamily: 'DM Sans, sans-serif' }}>
 
-      {/* SIDEBAR */}
+      {/* ── SIDEBAR ── */}
       <aside style={{ width: 240, flexShrink: 0, background: '#0f1f17', position: 'fixed', top: 0, left: 0, bottom: 0, display: 'flex', flexDirection: 'column', zIndex: 50 }}>
         <Link href="/" style={{ padding: '26px 22px 18px', display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', borderBottom: '0.5px solid rgba(255,255,255,.07)', marginBottom: 8 }}>
           <div style={{ width: 30, height: 30, background: 'var(--forest)', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -236,20 +339,21 @@ export default function AdminPanel() {
         </div>
       </aside>
 
-      {/* MAIN */}
+      {/* ── MAIN ── */}
       <main style={{ marginLeft: 240, flex: 1, minWidth: 0 }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 40, padding: '0 40px', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(245,240,232,.93)', backdropFilter: 'blur(14px)', borderBottom: '0.5px solid var(--border)' }}>
           <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--bottle)' }}>{navItems.find(n => n.id === page)?.label}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {page === 'crm' && <Btn onClick={() => setShowNewLead(true)}>+ New lead</Btn>}
             {page === 'ed-partners' && <Btn onClick={() => setShowNewPartner(true)}>+ New partner</Btn>}
+            {page === 'inventory' && <Btn onClick={() => setShowNewProduct(true)}>+ New product</Btn>}
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>StudentEssentials · {user?.email}</div>
           </div>
         </div>
 
         <div style={{ padding: '36px 40px' }}>
 
-          {/* OVERVIEW */}
+          {/* ══ OVERVIEW ══ */}
           {page === 'overview' && (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 24 }}>
@@ -344,7 +448,7 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* CRM LEADS */}
+          {/* ══ CRM LEADS ══ */}
           {page === 'crm' && (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 24 }}>
@@ -360,7 +464,7 @@ export default function AdminPanel() {
                 {STAGES.map(stage => (
                   <div key={stage} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (dragId.current) moveLead(dragId.current, stage) }}
                     style={{ background: 'rgba(26,58,42,.03)', border: '0.5px solid var(--border)', borderRadius: 14, minHeight: 200, padding: '12px 10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, padding: '0 2px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: STAGE_COLORS[stage], flexShrink: 0 }}></div>
                       <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--muted)' }}>{STAGE_LABELS[stage]}</div>
                       <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{stageCounts[stage] ?? 0}</div>
@@ -384,7 +488,7 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* ORDERS */}
+          {/* ══ ORDERS ══ */}
           {page === 'orders' && (
             <div>
               <div style={{ ...S.card, overflow: 'hidden' }}>
@@ -406,7 +510,7 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* CUSTOMERS */}
+          {/* ══ CUSTOMERS ══ */}
           {page === 'customers' && (
             <div>
               <div style={{ ...S.card, overflow: 'hidden' }}>
@@ -422,12 +526,12 @@ export default function AdminPanel() {
                     {statusBadge(s.status)}
                   </div>
                 ))}
-                {students.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>No customers yet. Students who sign up on the website will appear here.</div>}
+                {students.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>No customers yet.</div>}
               </div>
             </div>
           )}
 
-          {/* ED-PARTNERS */}
+          {/* ══ ED-PARTNERS ══ */}
           {page === 'ed-partners' && (
             <div>
               {pendingPartners.length > 0 && (
@@ -455,8 +559,6 @@ export default function AdminPanel() {
                       ?utm_partner={p.utm_code}
                     </div>
                     <span style={S.badge('var(--forest)', 'rgba(26,58,42,.08)')}>{p.commission_rate}%</span>
-
-                    {/* Status + Approve/Reject */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <span style={S.badge(
                         p.status === 'active' ? 'var(--forest)' : p.status === 'rejected' ? '#ef4444' : 'var(--gold)',
@@ -464,36 +566,27 @@ export default function AdminPanel() {
                       )}>{p.status}</span>
                       {p.status === 'pending' && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => handlePartnerAction(p.id, 'approve')}
-                            style={{ padding: '3px 10px', fontSize: 11, fontWeight: 500, background: 'var(--forest)', color: '#fff', border: 'none', borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                            Approve
-                          </button>
-                          <button onClick={() => handlePartnerAction(p.id, 'reject')}
-                            style={{ padding: '3px 10px', fontSize: 11, fontWeight: 500, background: '#fef2f2', color: '#ef4444', border: '0.5px solid #fca5a5', borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                            Reject
-                          </button>
+                          <button onClick={() => handlePartnerAction(p.id, 'approve')} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 500, background: 'var(--forest)', color: '#fff', border: 'none', borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Approve</button>
+                          <button onClick={() => handlePartnerAction(p.id, 'reject')} style={{ padding: '3px 10px', fontSize: 11, fontWeight: 500, background: '#fef2f2', color: '#ef4444', border: '0.5px solid #fca5a5', borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Reject</button>
                         </div>
                       )}
                     </div>
                   </div>
                 ))}
-                {partners.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>No partners yet. Add your first Ed-Partner above.</div>}
+                {partners.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>No partners yet.</div>}
               </div>
-
               <div style={{ ...S.card, padding: '20px 24px', background: 'rgba(26,58,42,.04)' }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>How UTM tracking works</div>
                 <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7 }}>
                   Each partner gets a unique UTM code. Share this link with them:<br />
-                  <code style={{ fontSize: 12, background: '#fff', padding: '3px 8px', borderRadius: 6, border: '0.5px solid var(--border)', color: 'var(--forest)' }}>
-                    https://student-essentials.com/?utm_partner=THEIR_CODE
-                  </code>
+                  <code style={{ fontSize: 12, background: '#fff', padding: '3px 8px', borderRadius: 6, border: '0.5px solid var(--border)', color: 'var(--forest)' }}>https://student-essentials.com/?utm_partner=THEIR_CODE</code>
                   <br />When a student signs up via this link, they're automatically attributed to that partner and a lead is created in CRM.
                 </div>
               </div>
             </div>
           )}
 
-          {/* REPORTS */}
+          {/* ══ REPORTS ══ */}
           {page === 'reports' && (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 24 }}>
@@ -505,7 +598,6 @@ export default function AdminPanel() {
                   </div>
                 ))}
               </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
                 <div style={{ ...S.card, padding: '24px' }}>
                   <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 18 }}>Revenue by service</div>
@@ -516,92 +608,124 @@ export default function AdminPanel() {
                         <span style={{ color: 'var(--forest)', fontWeight: 500 }}>{pct}%</span>
                       </div>
                       <div style={{ height: 6, background: 'rgba(26,58,42,.08)', borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ width: `${pct}%`, height: '100%', background: 'var(--forest)', borderRadius: 3, transition: 'width .4s' }}></div>
+                        <div style={{ width: `${pct}%`, height: '100%', background: 'var(--forest)', borderRadius: 3 }}></div>
                       </div>
                     </div>
                   ))}
                 </div>
-
                 <div style={{ ...S.card, padding: '24px' }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 18 }}>Leads by source</div>
-                  {[
-                    ['Website signup', leads.filter(l => l.source === 'website' || l.source === null).length, '#6366f1'],
-                    ['Ed-Partner referral', leads.filter(l => l.utm_source !== null).length, '#10b981'],
-                    ['Manual entry', leads.filter(l => l.source === 'manual').length, '#f59e0b'],
-                  ].map(([name, count, color]) => {
-                    const total = leads.length || 1
-                    const pct = Math.round(((count as number) / total) * 100)
+                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 18 }}>Pipeline funnel</div>
+                  {STAGES.map(s => {
+                    const count = stageCounts[s] ?? 0
+                    const max = Math.max(...Object.values(stageCounts), 1)
                     return (
-                      <div key={name as string} style={{ marginBottom: 14 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, marginBottom: 6 }}>
-                          <span style={{ color: 'var(--bottle)' }}>{name}</span>
-                          <span style={{ color: 'var(--muted)', fontWeight: 500 }}>{count as number} ({pct}%)</span>
+                      <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                        <div style={{ width: 70, fontSize: 11, color: 'var(--muted)' }}>{STAGE_LABELS[s]}</div>
+                        <div style={{ flex: 1, height: 6, background: 'rgba(26,58,42,.08)', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ width: `${(count / max) * 100}%`, height: '100%', background: STAGE_COLORS[s], borderRadius: 3 }}></div>
                         </div>
-                        <div style={{ height: 6, background: 'rgba(26,58,42,.08)', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${pct}%`, height: '100%', background: color as string, borderRadius: 3 }}></div>
-                        </div>
+                        <div style={{ width: 20, fontSize: 12, color: 'var(--bottle)', textAlign: 'right' }}>{count}</div>
                       </div>
                     )
                   })}
-                  <div style={{ marginTop: 24, paddingTop: 18, borderTop: '0.5px solid var(--border)' }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', marginBottom: 12 }}>Pipeline funnel</div>
-                    {STAGES.map(s => {
-                      const count = stageCounts[s] ?? 0
-                      const max = Math.max(...Object.values(stageCounts), 1)
-                      return (
-                        <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                          <div style={{ width: 70, fontSize: 11, color: 'var(--muted)' }}>{STAGE_LABELS[s]}</div>
-                          <div style={{ flex: 1, height: 6, background: 'rgba(26,58,42,.08)', borderRadius: 3, overflow: 'hidden' }}>
-                            <div style={{ width: `${(count / max) * 100}%`, height: '100%', background: STAGE_COLORS[s], borderRadius: 3 }}></div>
-                          </div>
-                          <div style={{ width: 20, fontSize: 12, color: 'var(--bottle)', textAlign: 'right' }}>{count}</div>
-                        </div>
-                      )
-                    })}
-                  </div>
                 </div>
-              </div>
-
-              <div style={{ ...S.card, overflow: 'hidden' }}>
-                <div style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>Ed-Partner performance</div>
-                <div style={{ padding: '14px 22px', borderBottom: '0.5px solid var(--border)', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 12 }}>
-                  {['Partner', 'Leads', 'Customers', 'Revenue', 'Commission owed'].map(h => <div key={h} style={S.th}>{h}</div>)}
-                </div>
-                {partners.length === 0 && <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>Add Ed-Partners to see their performance here.</div>}
-                {partners.map((p, i) => {
-                  const partnerLeads = leads.filter(l => l.ed_partner_id === p.id)
-                  return (
-                    <div key={p.id} style={{ padding: '14px 22px', borderBottom: '0.5px solid var(--border)', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 12, alignItems: 'center', background: i % 2 ? 'rgba(26,58,42,.02)' : 'transparent' }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)' }}>{p.name}</div>
-                      <div style={{ fontSize: 13, color: 'var(--bottle)' }}>{partnerLeads.length}</div>
-                      <div style={{ fontSize: 13, color: 'var(--bottle)' }}>—</div>
-                      <div style={{ fontSize: 13, color: 'var(--bottle)' }}>—</div>
-                      <div style={{ fontSize: 13, color: 'var(--forest)', fontWeight: 500 }}>—</div>
-                    </div>
-                  )
-                })}
               </div>
             </div>
           )}
 
-          {/* SERVICES */}
+          {/* ══ INVENTORY ══ */}
+          {page === 'inventory' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                <div style={{ fontSize: 13, color: 'var(--muted)' }}>{products.length} products · {products.filter(p => p.active).length} live on website</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', background: 'rgba(26,58,42,.06)', padding: '6px 14px', borderRadius: 20 }}>
+                  Changes save to Supabase and reflect on the website immediately
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
+                {products.map(product => (
+                  <div key={product.id} style={{ ...S.card, overflow: 'hidden', opacity: product.active ? 1 : 0.55, transition: 'opacity .2s' }}>
+
+                    {/* Image / icon area */}
+                    <div style={{ height: 130, background: 'linear-gradient(135deg, rgba(46,125,82,.07), rgba(46,125,82,.03))', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+                      {product.images?.[0] ? (
+                        <img src={product.images[0]} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ fontSize: 44 }}>{product.icon}</div>
+                      )}
+                      <div style={{ position: 'absolute', top: 8, left: 8, right: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 20, background: product.active ? 'var(--forest)' : '#6b7280', color: '#fff' }}>
+                          {product.active ? '● Live' : '○ Hidden'}
+                        </span>
+                        {product.badge && (
+                          <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 20, background: product.badge_color, color: '#fff' }}>{product.badge}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '14px 16px 16px' }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 4 }}>{product.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 12, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
+                        {product.description}
+                      </div>
+
+                      {/* Variant pills */}
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 14 }}>
+                        {product.product_variants?.slice(0,3).map(v => (
+                          <span key={v.id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(26,58,42,.06)', color: 'var(--muted)' }}>
+                            {v.name}{v.price > 0 ? ` · £${v.price}` : ''}
+                          </span>
+                        ))}
+                        {(product.product_variants?.length ?? 0) > 3 && (
+                          <span style={{ fontSize: 11, color: 'var(--muted)', padding: '2px 4px' }}>+{product.product_variants.length - 3} more</span>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => setEditingProduct(product)}
+                          style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 500, background: 'var(--forest)', color: '#fff', border: 'none', borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                          Edit
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await fetch(`/api/inventory/${product.id}`, {
+                              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ active: !product.active }),
+                            })
+                            setProducts(prev => prev.map(p => p.id === product.id ? { ...p, active: !p.active } : p))
+                          }}
+                          style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500, background: 'transparent', color: product.active ? '#ef4444' : 'var(--forest)', border: `0.5px solid ${product.active ? '#fca5a5' : 'rgba(46,125,82,.3)'}`, borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+                          {product.active ? 'Hide' : 'Show'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {products.length === 0 && (
+                <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 14 }}>
+                  No products yet — click "+ New product" to add one.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══ SERVICES (legacy read-only list) ══ */}
           {page === 'services' && (
             <div>
+              <div style={{ ...S.card, padding: '16px 22px', marginBottom: 16, background: 'rgba(26,58,42,.03)', fontSize: 13, color: 'var(--muted)' }}>
+                This is a read-only view. To edit products, pricing and images go to <button onClick={() => setPage('inventory')} style={{ color: 'var(--forest)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: 13, fontWeight: 500 }}>Inventory →</button>
+              </div>
               <div style={{ ...S.card, overflow: 'hidden' }}>
-                {[
-                  { icon: '🛏️', name: 'Bedding & Kitchen Pack', variants: 3, price: 'From £89', orders: 12 },
-                  { icon: '📱', name: 'UK SIM Card', variants: 3, price: 'From £14', orders: 8 },
-                  { icon: '✈️', name: 'Flight Tickets', variants: 2, price: 'From £420', orders: 3 },
-                  { icon: '🛡️', name: 'Travel Insurance', variants: 2, price: 'From £32', orders: 5 },
-                  { icon: '🏥', name: 'Health Insurance', variants: 2, price: 'From £15/mo', orders: 2 },
-                  { icon: '💸', name: 'Foreign Remittance', variants: 1, price: '0.4% fee', orders: 0 },
-                  { icon: '🚗', name: 'Airport Transfers', variants: 4, price: 'From £28', orders: 4 },
-                ].map((s, i) => (
-                  <div key={s.name} style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', display: 'flex', alignItems: 'center', gap: 16, background: i % 2 ? 'rgba(26,58,42,.02)' : 'transparent' }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{s.icon}</div>
+                {products.filter(p => p.active).map((p, i) => (
+                  <div key={p.id} style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', display: 'flex', alignItems: 'center', gap: 16, background: i % 2 ? 'rgba(26,58,42,.02)' : 'transparent' }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{p.icon}</div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>{s.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{s.variants} variants · {s.price} · {s.orders} orders</div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>{p.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{p.product_variants?.length ?? 0} variants · from £{Math.min(...(p.product_variants?.map(v => v.price) ?? [0]))}</div>
                     </div>
                     <span style={S.badge('var(--forest)', 'var(--mint)')}>Active</span>
                   </div>
@@ -610,7 +734,7 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* PAYOUTS */}
+          {/* ══ PAYOUTS ══ */}
           {page === 'payouts' && (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 24 }}>
@@ -639,7 +763,7 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* SETTINGS */}
+          {/* ══ SETTINGS ══ */}
           {page === 'settings' && (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -669,7 +793,7 @@ export default function AdminPanel() {
         </div>
       </main>
 
-      {/* NEW LEAD MODAL */}
+      {/* ══ NEW LEAD MODAL ══ */}
       {showNewLead && (
         <Modal title="New lead" onClose={() => setShowNewLead(false)}>
           <form onSubmit={createLead}>
@@ -683,7 +807,7 @@ export default function AdminPanel() {
             </div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Notes</label>
-              <textarea name="notes" placeholder="Any notes about this lead…" style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', minHeight: 80, boxSizing: 'border-box' }} />
+              <textarea name="notes" placeholder="Any notes…" style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', minHeight: 80, boxSizing: 'border-box' }} />
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <Btn variant="ghost" onClick={() => setShowNewLead(false)}>Cancel</Btn>
@@ -693,7 +817,7 @@ export default function AdminPanel() {
         </Modal>
       )}
 
-      {/* NEW PARTNER MODAL */}
+      {/* ══ NEW PARTNER MODAL ══ */}
       {showNewPartner && (
         <Modal title="New Ed-Partner" onClose={() => setShowNewPartner(false)}>
           <form onSubmit={createPartner}>
@@ -707,7 +831,7 @@ export default function AdminPanel() {
             </div>
             <Field label="Commission rate (%)" name="commission_rate" type="number" defaultValue="5" min="0" max="100" />
             <div style={{ padding: '12px 16px', background: 'var(--mint)', borderRadius: 10, marginBottom: 16, fontSize: 12, color: 'var(--forest)' }}>
-              Partner referral link will be: <strong>student-essentials.com/?utm_partner=UTM_CODE</strong>
+              Partner referral link: <strong>student-essentials.com/?utm_partner=UTM_CODE</strong>
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <Btn variant="ghost" onClick={() => setShowNewPartner(false)}>Cancel</Btn>
@@ -717,7 +841,7 @@ export default function AdminPanel() {
         </Modal>
       )}
 
-      {/* LEAD DETAIL MODAL */}
+      {/* ══ LEAD DETAIL MODAL ══ */}
       {selectedLead && (
         <Modal title={`${selectedLead.first_name} ${selectedLead.last_name ?? ''}`} onClose={() => setSelectedLead(null)}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
@@ -741,11 +865,111 @@ export default function AdminPanel() {
           </div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Notes</div>
-            <textarea defaultValue={selectedLead.notes ?? ''} onBlur={e => updateLeadNotes(selectedLead.id, e.target.value)} placeholder="Add notes about this lead…"
+            <textarea defaultValue={selectedLead.notes ?? ''} onBlur={e => updateLeadNotes(selectedLead.id, e.target.value)} placeholder="Add notes…"
               style={{ width: '100%', padding: '10px 14px', fontSize: 13, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', minHeight: 100, boxSizing: 'border-box' }} />
           </div>
         </Modal>
       )}
+
+      {/* ══ PRODUCT EDIT / NEW MODAL ══ */}
+      {(editingProduct !== null || showNewProduct) && (() => {
+        const isNew = editingProduct === null
+        const prod = editingProduct ?? {
+          id: '', name: '', slug: '', icon: '📦', category: 'general',
+          description: '', includes: [], badge: '', badge_color: '#2e7d52',
+          active: true, images: [], sort_order: products.length + 1,
+          product_variants: [{ id: '', name: '', price: 0 }],
+        }
+        return (
+          <Modal
+            title={isNew ? 'New product' : `Edit — ${prod.name}`}
+            onClose={() => { setEditingProduct(null); setShowNewProduct(false) }}
+          >
+            <form onSubmit={e => handleProductSave(e, isNew ? null : prod.id)}>
+
+              {/* Row 1: icon + name */}
+              <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '0 12px' }}>
+                <Field label="Icon" name="icon" defaultValue={prod.icon} placeholder="🛏️" />
+                <Field label="Product name *" name="name" required defaultValue={prod.name} placeholder="Bedding Pack" />
+              </div>
+
+              {/* Row 2: slug + category */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
+                <Field label="URL slug" name="slug" defaultValue={prod.slug} placeholder="bedding-pack" />
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Category</label>
+                  <select name="category" defaultValue={prod.category} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}>
+                    <option value="living">Living</option>
+                    <option value="connectivity">Connectivity</option>
+                    <option value="travel">Travel</option>
+                    <option value="insurance">Insurance</option>
+                    <option value="finance">Finance</option>
+                    <option value="general">General</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Description</label>
+                <textarea name="description" defaultValue={prod.description} rows={2}
+                  placeholder="One-line description shown on the services page…"
+                  style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* What's included */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>
+                  What's included <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(one bullet per line)</span>
+                </label>
+                <textarea name="includes" defaultValue={prod.includes?.join('\n')} rows={4}
+                  placeholder={'Duvet, pillow & pillowcases\nPlates, mugs & cutlery\nDelivered to your room'}
+                  style={{ width: '100%', padding: '10px 14px', fontSize: 13, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* Badge + colour + sort + status */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 80px 90px', gap: '0 10px' }}>
+                <Field label="Badge text" name="badge" defaultValue={prod.badge ?? ''} placeholder="Most popular" />
+                <Field label="Badge colour" name="badge_color" defaultValue={prod.badge_color} placeholder="#c8a96e" />
+                <Field label="Sort order" name="sort_order" type="number" defaultValue={String(prod.sort_order)} />
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Status</label>
+                  <select name="active" defaultValue={String(prod.active)} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}>
+                    <option value="true">Live</option>
+                    <option value="false">Hidden</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Image URL */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>
+                  Image URL <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(paste a URL or upload to Supabase Storage and paste the public URL)</span>
+                </label>
+                <input name="image_url" defaultValue={prod.images?.[0] ?? ''}
+                  placeholder="https://…supabase.co/storage/v1/object/public/product-images/bedding.jpg"
+                  style={{ width: '100%', padding: '10px 14px', fontSize: 13, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }} />
+                {prod.images?.[0] && (
+                  <img src={prod.images[0]} alt="" style={{ marginTop: 8, height: 80, borderRadius: 8, objectFit: 'cover' }} />
+                )}
+              </div>
+
+              {/* Pricing variants */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 8 }}>
+                  Pricing variants <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(name + price in £)</span>
+                </div>
+                <VariantsEditor defaultVariants={prod.product_variants ?? []} />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <Btn variant="ghost" onClick={() => { setEditingProduct(null); setShowNewProduct(false) }}>Cancel</Btn>
+                <Btn style={{ minWidth: 110 }}>{productSaving ? 'Saving…' : isNew ? 'Create product' : 'Save changes'}</Btn>
+              </div>
+            </form>
+          </Modal>
+        )
+      })()}
 
     </div>
   )

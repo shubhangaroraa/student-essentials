@@ -1,23 +1,45 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
-// Live inventory feed from the CRM. Re-fetched every 30s (ISR).
-export const revalidate = 30
+export const revalidate = 0
 
 export async function GET() {
-  try {
-    const res = await fetch(`${process.env.CRM_API_URL}/api/public/inventory`, {
-      headers: { 'x-api-key': process.env.CRM_API_KEY! },
-      next: { revalidate: 30 },
-    })
-    if (!res.ok) {
-      return NextResponse.json({ items: [], error: `CRM ${res.status}` }, { status: 200 })
-    }
-    const data = await res.json()
-    return NextResponse.json(data, {
-      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
-    })
-  } catch (err) {
-    console.error('Inventory fetch error:', err)
-    return NextResponse.json({ items: [], error: 'Failed to load inventory' }, { status: 200 })
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  const { data: products, error } = await supabase
+    .from('products')
+    .select('*, product_variants(*)')
+    .order('sort_order')
+    .order('sort_order', { referencedTable: 'product_variants' })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ items: products })
+}
+
+export async function POST(request: Request) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  const body = await request.json()
+  const { variants, ...product } = body
+
+  const { data, error } = await supabase
+    .from('products')
+    .insert({ ...product, updated_at: new Date().toISOString() })
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  if (variants?.length) {
+    await supabase.from('product_variants').insert(
+      variants.map((v: { name: string; price: number }, i: number) => ({
+        product_id: data.id, name: v.name, price: v.price, sort_order: i,
+      }))
+    )
   }
+  return NextResponse.json({ product: data })
 }
