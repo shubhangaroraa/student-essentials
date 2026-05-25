@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
@@ -20,11 +20,20 @@ type Student = {
   id: string; first_name: string | null; email: string | null; university: string | null
   country: string | null; status: string; source: string | null; created_at: string
 }
-type ProductVariant = { id: string; name: string; price: number }
+type ProductVariant = {
+  id: string; name: string; price: number; compare_at_price?: number | null
+  description?: string | null; active?: boolean
+}
+type FaqItem = { question: string; answer: string }
 type Product = {
   id: string; name: string; slug: string; icon: string; category: string
-  description: string; includes: string[]; badge: string | null
-  badge_color: string; active: boolean; images: string[]; sort_order: number
+  description: string; includes: string[]; whats_not_included: string[]
+  badge: string | null; badge_color: string; active: boolean
+  images: string[]; gallery: string[]; sort_order: number
+  terms_and_conditions: string | null; refund_policy: string | null
+  delivery_timeline: string | null; is_hot_selling: boolean
+  is_on_sale: boolean; is_new: boolean; is_featured: boolean
+  sale_price: number | null; faq: FaqItem[]
   product_variants: ProductVariant[]
 }
 
@@ -41,7 +50,9 @@ const STAGES = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost'] as c
 const STAGE_LABELS: Record<string, string> = { new: 'New', contacted: 'Contacted', qualified: 'Qualified', proposal: 'Proposal', won: 'Won', lost: 'Lost' }
 const STAGE_COLORS: Record<string, string> = { new: '#6366f1', contacted: '#f59e0b', qualified: '#3b82f6', proposal: '#8b5cf6', won: '#10b981', lost: '#ef4444' }
 
-const pages = ['overview', 'crm', 'orders', 'customers', 'ed-partners', 'reports', 'inventory', 'services', 'payouts', 'settings'] as const
+const CATEGORIES = ['living', 'connectivity', 'travel', 'insurance', 'finance', 'general']
+
+const pages = ['overview', 'crm', 'orders', 'customers', 'ed-partners', 'reports', 'catalogue', 'payouts', 'settings'] as const
 type Page = typeof pages[number]
 
 // ── Style helpers ──────────────────────────────────────────────────
@@ -62,13 +73,13 @@ function statusBadge(status: string) {
 }
 
 // ── Reusable components ────────────────────────────────────────────
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: 'var(--cream)', borderRadius: 18, padding: '32px', width: 560, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,.2)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-          <div style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 20, color: 'var(--bottle)' }}>{title}</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--muted)' }}>×</button>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '40px 20px' }}>
+      <div style={{ background: 'var(--cream)', borderRadius: 20, padding: '36px', width: wide ? 860 : 580, boxShadow: '0 24px 60px rgba(0,0,0,.2)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
+          <div style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 22, color: 'var(--bottle)' }}>{title}</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}>×</button>
         </div>
         {children}
       </div>
@@ -76,46 +87,502 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   )
 }
 
-function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+function Field({ label, hint, ...props }: { label: string; hint?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>{label}</label>
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>
+        {label} {hint && <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— {hint}</span>}
+      </label>
       <input {...props} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }} />
     </div>
   )
 }
 
-function Btn({ children, onClick, variant = 'primary', style }: { children: React.ReactNode; onClick?: () => void; variant?: 'primary' | 'ghost'; style?: React.CSSProperties }) {
+function TextArea({ label, hint, rows = 3, ...props }: { label: string; hint?: string; rows?: number } & React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
-    <button onClick={onClick} style={{ padding: '10px 22px', fontSize: 13, fontWeight: 500, background: variant === 'primary' ? 'var(--forest)' : 'transparent', color: variant === 'primary' ? '#fff' : 'var(--forest)', border: variant === 'ghost' ? '0.5px solid var(--forest)' : 'none', borderRadius: 40, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', ...style }}>
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>
+        {label} {hint && <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— {hint}</span>}
+      </label>
+      <textarea {...props} rows={rows} style={{ width: '100%', padding: '10px 14px', fontSize: 13, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', boxSizing: 'border-box' }} />
+    </div>
+  )
+}
+
+function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: 'var(--bottle)', padding: '8px 12px', background: checked ? 'var(--mint)' : 'rgba(26,58,42,.03)', borderRadius: 10, border: `0.5px solid ${checked ? 'rgba(46,125,82,.3)' : 'var(--border)'}`, transition: 'all .15s' }}>
+      <div style={{ width: 18, height: 18, borderRadius: 5, background: checked ? 'var(--forest)' : '#fff', border: `1.5px solid ${checked ? 'var(--forest)' : 'rgba(26,58,42,.25)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s' }}>
+        {checked && <svg viewBox="0 0 10 8" fill="none" width="10" height="8"><path d="M1 4L3.5 6.5L9 1" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+      </div>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} style={{ display: 'none' }} />
+      {label}
+    </label>
+  )
+}
+
+function Btn({ children, onClick, variant = 'primary', style, type = 'button' }: { children: React.ReactNode; onClick?: () => void; variant?: 'primary' | 'ghost' | 'danger'; style?: React.CSSProperties; type?: 'button' | 'submit' }) {
+  const bg = variant === 'primary' ? 'var(--forest)' : variant === 'danger' ? '#ef4444' : 'transparent'
+  const color = variant === 'ghost' ? 'var(--forest)' : '#fff'
+  const border = variant === 'ghost' ? '0.5px solid var(--forest)' : 'none'
+  return (
+    <button type={type} onClick={onClick} style={{ padding: '10px 22px', fontSize: 13, fontWeight: 500, background: bg, color, border, borderRadius: 40, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', ...style }}>
       {children}
     </button>
   )
 }
 
-// Variants editor used inside the product modal
-function VariantsEditor({ defaultVariants }: { defaultVariants: { id?: string; name: string; price: number }[] }) {
-  const [variants, setVariants] = useState(defaultVariants.length > 0 ? defaultVariants : [{ name: '', price: 0 }])
+// ── Variants editor ────────────────────────────────────────────────
+function VariantsEditor({ value, onChange }: { value: ProductVariant[]; onChange: (v: ProductVariant[]) => void }) {
+  const add = () => onChange([...value, { id: '', name: '', price: 0, compare_at_price: null, description: '', active: true }])
+  const remove = (i: number) => onChange(value.filter((_, j) => j !== i))
+  const update = (i: number, field: string, val: string | number | boolean | null) =>
+    onChange(value.map((v, j) => j === i ? { ...v, [field]: val } : v))
+
   return (
     <div>
-      {variants.map((v, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 32px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-          <input name="variant_name" value={v.name}
-            onChange={e => setVariants(prev => prev.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-            placeholder="e.g. Standard"
-            style={{ padding: '8px 12px', fontSize: 13, border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 8, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
-          <input name="variant_price" type="number" value={v.price}
-            onChange={e => setVariants(prev => prev.map((x, j) => j === i ? { ...x, price: parseFloat(e.target.value) || 0 } : x))}
-            placeholder="89"
-            style={{ padding: '8px 12px', fontSize: 13, border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 8, outline: 'none', fontFamily: 'DM Sans, sans-serif', textAlign: 'right' }} />
-          <button type="button" onClick={() => setVariants(prev => prev.filter((_, j) => j !== i))}
-            style={{ width: 32, height: 32, borderRadius: 8, background: '#fef2f2', color: '#ef4444', border: 'none', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+      {value.map((v, i) => (
+        <div key={i} style={{ background: '#fff', border: '0.5px solid var(--border)', borderRadius: 12, padding: '14px 16px', marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 110px 32px', gap: 8, alignItems: 'end' }}>
+            <Field label="Variant name" value={v.name} onChange={e => update(i, 'name', e.target.value)} placeholder="e.g. Standard" style={{ marginBottom: 0 }} />
+            <Field label="Price (£)" type="number" value={v.price} onChange={e => update(i, 'price', parseFloat(e.target.value) || 0)} placeholder="89" style={{ marginBottom: 0 }} />
+            <Field label="Compare at (£)" type="number" value={v.compare_at_price ?? ''} onChange={e => update(i, 'compare_at_price', e.target.value ? parseFloat(e.target.value) : null)} placeholder="Optional" style={{ marginBottom: 0 }} />
+            <button onClick={() => remove(i)} style={{ width: 32, height: 38, borderRadius: 8, background: '#fef2f2', color: '#ef4444', border: 'none', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <Field label="Variant description" value={v.description ?? ''} onChange={e => update(i, 'description', e.target.value)} placeholder="Short description shown under this option" style={{ marginBottom: 0 }} />
+          </div>
         </div>
       ))}
-      <button type="button" onClick={() => setVariants(prev => [...prev, { name: '', price: 0 }])}
-        style={{ fontSize: 12, color: 'var(--forest)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', padding: 0 }}>
+      <button type="button" onClick={add} style={{ fontSize: 13, color: 'var(--forest)', background: 'none', border: '0.5px dashed rgba(46,125,82,.4)', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', width: '100%' }}>
         + Add variant
       </button>
+    </div>
+  )
+}
+
+// ── FAQ editor ────────────────────────────────────────────────────
+function FaqEditor({ value, onChange }: { value: FaqItem[]; onChange: (v: FaqItem[]) => void }) {
+  const add = () => onChange([...value, { question: '', answer: '' }])
+  const remove = (i: number) => onChange(value.filter((_, j) => j !== i))
+  const update = (i: number, field: 'question' | 'answer', val: string) =>
+    onChange(value.map((v, j) => j === i ? { ...v, [field]: val } : v))
+
+  return (
+    <div>
+      {value.map((item, i) => (
+        <div key={i} style={{ background: '#fff', border: '0.5px solid var(--border)', borderRadius: 12, padding: '14px 16px', marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>FAQ #{i + 1}</span>
+            <button onClick={() => remove(i)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+          </div>
+          <Field label="Question" value={item.question} onChange={e => update(i, 'question', e.target.value)} placeholder="e.g. Can I change the delivery address?" style={{ marginBottom: 8 }} />
+          <TextArea label="Answer" value={item.answer} onChange={e => update(i, 'answer', e.target.value)} rows={2} placeholder="Answer shown to students" />
+        </div>
+      ))}
+      <button type="button" onClick={add} style={{ fontSize: 13, color: 'var(--forest)', background: 'none', border: '0.5px dashed rgba(46,125,82,.4)', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', width: '100%' }}>
+        + Add FAQ
+      </button>
+    </div>
+  )
+}
+
+// ── Image gallery editor ───────────────────────────────────────────
+function GalleryEditor({ images, onChange }: { images: string[]; onChange: (imgs: string[]) => void }) {
+  const [newUrl, setNewUrl] = useState('')
+  const dragIdx = useRef<number | null>(null)
+
+  const add = () => {
+    if (!newUrl.trim()) return
+    onChange([...images, newUrl.trim()])
+    setNewUrl('')
+  }
+  const remove = (i: number) => onChange(images.filter((_, j) => j !== i))
+  const setMain = (i: number) => {
+    const arr = [...images]
+    const [item] = arr.splice(i, 1)
+    arr.unshift(item)
+    onChange(arr)
+  }
+  const onDrop = (toIdx: number) => {
+    if (dragIdx.current === null || dragIdx.current === toIdx) return
+    const arr = [...images]
+    const [item] = arr.splice(dragIdx.current, 1)
+    arr.splice(toIdx, 0, item)
+    onChange(arr)
+    dragIdx.current = null
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        {images.map((url, i) => (
+          <div key={i} draggable onDragStart={() => { dragIdx.current = i }} onDragOver={e => e.preventDefault()} onDrop={() => onDrop(i)}
+            style={{ position: 'relative', width: 100, height: 80, borderRadius: 10, overflow: 'hidden', border: i === 0 ? '2px solid var(--forest)' : '1px solid var(--border)', cursor: 'grab', flexShrink: 0 }}>
+            <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            {i === 0 && <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--forest)', color: '#fff', fontSize: 9, textAlign: 'center', padding: '2px 0', fontWeight: 600 }}>MAIN</div>}
+            <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {i > 0 && (
+                <button onClick={() => setMain(i)} style={{ width: 20, height: 20, borderRadius: 4, background: 'var(--forest)', border: 'none', color: '#fff', fontSize: 9, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Set as main">★</button>
+              )}
+              <button onClick={() => remove(i)} style={{ width: 20, height: 20, borderRadius: 4, background: '#ef4444', border: 'none', color: '#fff', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+            </div>
+          </div>
+        ))}
+        {images.length === 0 && (
+          <div style={{ width: '100%', padding: '20px', textAlign: 'center', fontSize: 12, color: 'var(--muted)', background: 'rgba(26,58,42,.03)', borderRadius: 10, border: '0.5px dashed var(--border)' }}>
+            No images yet — paste a URL below
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={newUrl} onChange={e => setNewUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), add())}
+          placeholder="Paste image URL (Supabase Storage, Cloudinary, etc.)"
+          style={{ flex: 1, padding: '10px 14px', fontSize: 13, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
+        <button type="button" onClick={add} style={{ padding: '10px 18px', fontSize: 13, fontWeight: 500, background: 'var(--forest)', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', flexShrink: 0 }}>Add</button>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>Drag to reorder • First image is the main photo • Click ★ to promote to main</div>
+    </div>
+  )
+}
+
+// ── Catalogue Editor Modal ─────────────────────────────────────────
+type CatalogueTab = 'basic' | 'media' | 'pricing' | 'policies' | 'faq' | 'settings'
+
+function CatalogueEditor({
+  product, isNew, onClose, onSave
+}: {
+  product: Product; isNew: boolean; onClose: () => void; onSave: (p: Product) => void
+}) {
+  const [tab, setTab] = useState<CatalogueTab>('basic')
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState<Product>({ ...product })
+
+  const set = (field: keyof Product, value: unknown) => setForm(f => ({ ...f, [field]: value }))
+
+  const handleSave = async () => {
+    setSaving(true)
+    const payload = {
+      name: form.name,
+      slug: form.slug || form.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      icon: form.icon,
+      category: form.category,
+      description: form.description,
+      includes: form.includes,
+      whats_not_included: form.whats_not_included,
+      badge: form.badge || null,
+      badge_color: form.badge_color,
+      active: form.active,
+      sort_order: form.sort_order,
+      images: form.gallery.length > 0 ? [form.gallery[0]] : form.images,
+      gallery: form.gallery,
+      terms_and_conditions: form.terms_and_conditions || null,
+      refund_policy: form.refund_policy || null,
+      delivery_timeline: form.delivery_timeline || null,
+      is_hot_selling: form.is_hot_selling,
+      is_on_sale: form.is_on_sale,
+      is_new: form.is_new,
+      is_featured: form.is_featured,
+      sale_price: form.is_on_sale ? form.sale_price : null,
+      faq: form.faq,
+      variants: form.product_variants,
+    }
+
+    try {
+      if (isNew) {
+        const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        const { product: created } = await res.json()
+        if (created) {
+          const full = await fetch(`/api/inventory/${created.id}`).then(r => r.json())
+          onSave(full)
+        }
+      } else {
+        await fetch(`/api/inventory/${form.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        const updated = await fetch(`/api/inventory/${form.id}`).then(r => r.json())
+        onSave(updated)
+      }
+    } catch (e) {
+      console.error(e)
+    }
+    setSaving(false)
+    onClose()
+  }
+
+  const TABS: { id: CatalogueTab; label: string; icon: string }[] = [
+    { id: 'basic', label: 'Basic info', icon: '📝' },
+    { id: 'media', label: 'Images', icon: '🖼️' },
+    { id: 'pricing', label: 'Pricing', icon: '💷' },
+    { id: 'policies', label: 'Policies', icon: '📋' },
+    { id: 'faq', label: 'FAQs', icon: '❓' },
+    { id: 'settings', label: 'Settings', icon: '⚙️' },
+  ]
+
+  const includesText = form.includes?.join('\n') ?? ''
+  const notIncludedText = form.whats_not_included?.join('\n') ?? ''
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '32px 20px' }}>
+      <div style={{ background: 'var(--cream)', borderRadius: 20, width: 900, boxShadow: '0 32px 80px rgba(0,0,0,.25)', flexShrink: 0 }}>
+
+        {/* Header */}
+        <div style={{ padding: '24px 32px 0', borderBottom: '0.5px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div>
+              <div style={{ fontFamily: 'Playfair Display, Georgia, serif', fontSize: 22, color: 'var(--bottle)' }}>
+                {isNew ? 'New service' : form.name || 'Edit service'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
+                {isNew ? 'Fill in details below — changes save to Supabase and go live immediately' : `Editing slug: ${form.slug}`}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {/* Status badges */}
+              <div style={{ display: 'flex', gap: 6 }}>
+                {form.is_hot_selling && <span style={S.badge('#c2410c', '#fff7ed')}>🔥 Hot</span>}
+                {form.is_on_sale && <span style={S.badge('#b45309', '#fef3c7')}>🏷️ Sale</span>}
+                {form.is_new && <span style={S.badge('#1d4ed8', '#eff6ff')}>✨ New</span>}
+                {form.is_featured && <span style={S.badge('#7c3aed', '#f5f3ff')}>⭐ Featured</span>}
+              </div>
+              <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)', lineHeight: 1 }}>×</button>
+            </div>
+          </div>
+
+          {/* Tab nav */}
+          <div style={{ display: 'flex', gap: 0 }}>
+            {TABS.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                style={{ padding: '10px 18px', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? 'var(--forest)' : 'var(--muted)', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid var(--forest)' : '2px solid transparent', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', gap: 6, display: 'flex', alignItems: 'center' }}>
+                <span>{t.icon}</span> {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '28px 32px', maxHeight: '65vh', overflowY: 'auto' }}>
+
+          {/* ── BASIC ── */}
+          {tab === 'basic' && (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '0 16px' }}>
+                <Field label="Icon" value={form.icon} onChange={e => set('icon', e.target.value)} placeholder="🛏️" />
+                <Field label="Service name *" value={form.name} onChange={e => set('name', e.target.value)} placeholder="Bedding & Kitchen Pack" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <Field label="URL slug" hint="auto-generated if blank" value={form.slug} onChange={e => set('slug', e.target.value)} placeholder="bedding-pack" />
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Category</label>
+                  <select value={form.category} onChange={e => set('category', e.target.value)} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}>
+                    {CATEGORIES.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                  </select>
+                </div>
+              </div>
+              <TextArea label="Short description" hint="shown on services page" rows={2} value={form.description} onChange={e => set('description', e.target.value)} placeholder="One-line description of what this service does for the student…" />
+              <TextArea label="What's included" hint="one item per line" rows={5} value={includesText}
+                onChange={e => set('includes', e.target.value.split('\n').map(s => s.trim()).filter(Boolean))}
+                placeholder={'Duvet, pillow & pillowcases\nPlates, mugs & cutlery\nDelivered to your room\nFree returns within 14 days'} />
+              <TextArea label="What's NOT included" hint="one item per line — shown as exclusions" rows={3} value={notIncludedText}
+                onChange={e => set('whats_not_included', e.target.value.split('\n').map(s => s.trim()).filter(Boolean))}
+                placeholder={'International shipping\nBed frame or mattress'} />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: '0 16px' }}>
+                <Field label="Badge text" hint="e.g. Most popular, New, Best rates" value={form.badge ?? ''} onChange={e => set('badge', e.target.value)} placeholder="Most popular" />
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Badge colour</label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input type="color" value={form.badge_color} onChange={e => set('badge_color', e.target.value)} style={{ width: 40, height: 38, border: 'none', borderRadius: 8, cursor: 'pointer', padding: 2 }} />
+                    <input value={form.badge_color} onChange={e => set('badge_color', e.target.value)} style={{ flex: 1, padding: '10px 10px', fontSize: 13, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── MEDIA ── */}
+          {tab === 'media' && (
+            <div>
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 4 }}>Product images</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>The first image is the main photo shown on the services page. Drag to reorder. Upload to Supabase Storage (Storage → product-images bucket) and paste the public URL.</div>
+              </div>
+              <GalleryEditor
+                images={form.gallery.length > 0 ? form.gallery : form.images}
+                onChange={imgs => set('gallery', imgs)}
+              />
+              <div style={{ marginTop: 24, padding: '16px', background: 'rgba(26,58,42,.04)', borderRadius: 12, fontSize: 12, color: 'var(--muted)' }}>
+                💡 <strong>How to upload:</strong> Go to Supabase → Storage → product-images → Upload file → copy the public URL and paste it above.
+              </div>
+            </div>
+          )}
+
+          {/* ── PRICING ── */}
+          {tab === 'pricing' && (
+            <div>
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 4 }}>Pricing variants</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>Each variant is a purchasable option. Set a "Compare at" price to show a strikethrough on the website (e.g. was £149, now £119).</div>
+                <VariantsEditor value={form.product_variants} onChange={v => set('product_variants', v)} />
+              </div>
+
+              <div style={{ borderTop: '0.5px solid var(--border)', paddingTop: 20 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 4 }}>Sale settings</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>When "On sale" is checked, a sale banner shows on the card and the sale price overrides the variant price on the website.</div>
+                <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                  <Checkbox label="🏷️ Mark as On Sale" checked={form.is_on_sale} onChange={v => set('is_on_sale', v)} />
+                </div>
+                {form.is_on_sale && (
+                  <Field label="Sale price (£)" type="number" hint="overrides all variant prices" value={form.sale_price ?? ''} onChange={e => set('sale_price', e.target.value ? parseFloat(e.target.value) : null)} placeholder="e.g. 79" />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── POLICIES ── */}
+          {tab === 'policies' && (
+            <div>
+              <TextArea label="Delivery timeline" hint="when students can expect to receive this" rows={4}
+                value={form.delivery_timeline ?? ''}
+                onChange={e => set('delivery_timeline', e.target.value)}
+                placeholder={'Physical items: Delivered to your accommodation 2-3 days before your arrival date.\n\nDigital items (SIM, insurance): Sent to your email within 24 hours of order confirmation.'} />
+              <TextArea label="Returns & refund policy" hint="shown on product page and at checkout" rows={5}
+                value={form.refund_policy ?? ''}
+                onChange={e => set('refund_policy', e.target.value)}
+                placeholder={'Physical packs: Free returns within 14 days of delivery if items are unused and in original packaging.\n\nSIM cards: Non-refundable once activated.\n\nInsurance: 14-day cooling off period applies.'} />
+              <TextArea label="Terms & conditions" hint="full T&Cs for this service" rows={8}
+                value={form.terms_and_conditions ?? ''}
+                onChange={e => set('terms_and_conditions', e.target.value)}
+                placeholder={'1. This service is provided by Student Solutions Pvt Limited ("StudentEssentials").\n\n2. By placing an order you agree to our full terms at student-essentials.com/terms.\n\n3. ...'} />
+            </div>
+          )}
+
+          {/* ── FAQ ── */}
+          {tab === 'faq' && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 4 }}>Frequently asked questions</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 20 }}>FAQs are shown collapsed on the product page. Add questions students commonly ask about this service.</div>
+              <FaqEditor value={form.faq ?? []} onChange={v => set('faq', v)} />
+            </div>
+          )}
+
+          {/* ── SETTINGS ── */}
+          {tab === 'settings' && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 16 }}>Visibility & labels</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 24 }}>
+                <Checkbox label="✅ Live on website" checked={form.active} onChange={v => set('active', v)} />
+                <Checkbox label="🔥 Hot selling" checked={form.is_hot_selling} onChange={v => set('is_hot_selling', v)} />
+                <Checkbox label="✨ New" checked={form.is_new} onChange={v => set('is_new', v)} />
+                <Checkbox label="⭐ Featured" checked={form.is_featured} onChange={v => set('is_featured', v)} />
+              </div>
+
+              <div style={{ borderTop: '0.5px solid var(--border)', paddingTop: 20, marginBottom: 20 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 4 }}>Sort order</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Lower number = appears first on the website. You can also drag to reorder from the catalogue list.</div>
+                <Field label="Sort position" type="number" hint="1 = first" value={form.sort_order} onChange={e => set('sort_order', parseInt(e.target.value) || 0)} placeholder="1" />
+              </div>
+
+              <div style={{ borderTop: '0.5px solid var(--border)', paddingTop: 20 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 4 }}>Danger zone</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>Hiding a service removes it from the website immediately but keeps all order history.</div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <Btn variant={form.active ? 'danger' : 'ghost'} onClick={() => set('active', !form.active)}>
+                    {form.active ? 'Hide from website' : 'Make live'}
+                  </Btn>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '20px 32px', borderTop: '0.5px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Changes go live on student-essentials.com immediately after saving.</div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn type="button" onClick={handleSave} style={{ minWidth: 120 }}>
+              {saving ? 'Saving…' : isNew ? 'Create service' : 'Save changes'}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Sortable product row ───────────────────────────────────────────
+function ProductRow({ product, index, onDragStart, onDrop, onEdit, onToggle }: {
+  product: Product; index: number
+  onDragStart: (i: number) => void; onDrop: (i: number) => void
+  onEdit: () => void; onToggle: () => void
+}) {
+  const tags = []
+  if (product.is_hot_selling) tags.push({ label: '🔥 Hot', bg: '#fff7ed', color: '#c2410c' })
+  if (product.is_on_sale) tags.push({ label: '🏷️ Sale', bg: '#fef3c7', color: '#b45309' })
+  if (product.is_new) tags.push({ label: '✨ New', bg: '#eff6ff', color: '#1d4ed8' })
+  if (product.is_featured) tags.push({ label: '⭐ Featured', bg: '#f5f3ff', color: '#7c3aed' })
+
+  const minPrice = product.product_variants?.length ? Math.min(...product.product_variants.map(v => v.price)) : 0
+
+  return (
+    <div draggable onDragStart={() => onDragStart(index)} onDragOver={e => e.preventDefault()} onDrop={() => onDrop(index)}
+      style={{ background: '#fff', border: '0.5px solid var(--border)', borderRadius: 14, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 16, cursor: 'grab', opacity: product.active ? 1 : 0.55, transition: 'opacity .2s' }}>
+
+      {/* Drag handle */}
+      <div style={{ color: 'var(--muted)', fontSize: 18, cursor: 'grab', flexShrink: 0 }}>⠿</div>
+
+      {/* Image / icon */}
+      <div style={{ width: 56, height: 56, borderRadius: 10, overflow: 'hidden', flexShrink: 0, background: 'linear-gradient(135deg, rgba(46,125,82,.07), rgba(46,125,82,.03))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {(product.gallery?.[0] || product.images?.[0]) ? (
+          <img src={product.gallery?.[0] || product.images?.[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <span style={{ fontSize: 28 }}>{product.icon}</span>
+        )}
+      </div>
+
+      {/* Info */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>{product.name}</div>
+          {tags.map((t, i) => (
+            <span key={i} style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: t.bg, color: t.color }}>{t.label}</span>
+          ))}
+          {!product.active && <span style={S.badge('var(--muted)', 'rgba(26,58,42,.06)')}>Hidden</span>}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>{product.description}</div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+          {product.product_variants?.slice(0, 3).map(v => (
+            <span key={v.id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(26,58,42,.06)', color: 'var(--muted)' }}>
+              {v.name} · £{v.price}
+            </span>
+          ))}
+          {(product.product_variants?.length ?? 0) > 3 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>+{product.product_variants.length - 3} more</span>}
+        </div>
+      </div>
+
+      {/* Price */}
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        {product.is_on_sale && product.sale_price ? (
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#c2410c' }}>£{product.sale_price}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', textDecoration: 'line-through' }}>from £{minPrice}</div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--bottle)' }}>{minPrice > 0 ? `from £${minPrice}` : 'Free'}</div>
+        )}
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{product.product_variants?.length ?? 0} variant{product.product_variants?.length !== 1 ? 's' : ''}</div>
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        <button onClick={onEdit}
+          style={{ padding: '8px 16px', fontSize: 12, fontWeight: 500, background: 'var(--forest)', color: '#fff', border: 'none', borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+          Edit
+        </button>
+        <button onClick={onToggle}
+          style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500, background: 'transparent', color: product.active ? '#ef4444' : 'var(--forest)', border: `0.5px solid ${product.active ? '#fca5a5' : 'rgba(46,125,82,.3)'}`, borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
+          {product.active ? 'Hide' : 'Show'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -132,11 +599,11 @@ export default function AdminPanel() {
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(false)
 
-  // Inventory data
+  // Catalogue data
   const [products, setProducts] = useState<Product[]>([])
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [showNewProduct, setShowNewProduct] = useState(false)
-  const [productSaving, setProductSaving] = useState(false)
+  const catalogueDragIdx = useRef<number | null>(null)
 
   // CRM modal state
   const [showNewLead, setShowNewLead] = useState(false)
@@ -154,7 +621,7 @@ export default function AdminPanel() {
     })
   }, [])
 
-  // ── Fetch data on page change ──
+  // ── Fetch on page change ──
   useEffect(() => {
     const supabase = createClient()
     if (page === 'crm' || page === 'overview') {
@@ -170,7 +637,7 @@ export default function AdminPanel() {
       supabase.from('crm_students').select('*').order('created_at', { ascending: false })
         .then(({ data }) => setStudents(data ?? []))
     }
-    if (page === 'inventory') {
+    if (page === 'catalogue') {
       fetch('/api/inventory').then(r => r.json()).then(d => setProducts(d.items ?? []))
     }
   }, [page])
@@ -209,87 +676,70 @@ export default function AdminPanel() {
     const supabase = createClient()
     const { data } = await supabase.from('ed_partners').insert({
       name: fd.get('name') as string, contact_name: fd.get('contact_name') as string || null,
-      contact_email: fd.get('contact_email') as string || null, contact_phone: fd.get('contact_phone') as string || null,
-      institution: fd.get('institution') as string || null, utm_code: fd.get('utm_code') as string,
+      contact_email: fd.get('contact_email') as string || null,
+      institution: fd.get('institution') as string || null,
+      utm_code: fd.get('utm_code') as string,
       commission_rate: parseFloat(fd.get('commission_rate') as string) || 5, status: 'active',
     }).select().single()
     if (data) setPartners(prev => [data, ...prev])
     setShowNewPartner(false)
   }
   const handlePartnerAction = async (partner_id: string, action: 'approve' | 'reject') => {
-    const res = await fetch('/api/partners/approve', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ partner_id, action }),
-    })
+    const res = await fetch('/api/partners/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ partner_id, action }) })
     if (res.ok) {
       const newStatus = action === 'approve' ? 'active' : 'rejected'
       setPartners(prev => prev.map(p => p.id === partner_id ? { ...p, status: newStatus } : p))
     }
   }
 
-  // ── Product save ──
-  const handleProductSave = async (e: React.FormEvent<HTMLFormElement>, prodId: string | null) => {
-    e.preventDefault()
-    setProductSaving(true)
-    const fd = new FormData(e.currentTarget)
-    const includesRaw = fd.get('includes') as string
-    const includes = includesRaw.split('\n').map(s => s.trim()).filter(Boolean)
-    const variantNames = fd.getAll('variant_name') as string[]
-    const variantPrices = fd.getAll('variant_price') as string[]
-    const variants = variantNames.map((name, i) => ({ name, price: parseFloat(variantPrices[i]) || 0 })).filter(v => v.name)
-    const imageUrl = (fd.get('image_url') as string).trim()
+  // ── Catalogue drag-to-reorder ──
+  const handleCatalogueDrop = useCallback(async (toIdx: number) => {
+    if (catalogueDragIdx.current === null || catalogueDragIdx.current === toIdx) return
+    const arr = [...products]
+    const [item] = arr.splice(catalogueDragIdx.current, 1)
+    arr.splice(toIdx, 0, item)
+    // update sort_order
+    const updated = arr.map((p, i) => ({ ...p, sort_order: i + 1 }))
+    setProducts(updated)
+    catalogueDragIdx.current = null
+    // persist to Supabase
+    await Promise.all(updated.map(p =>
+      fetch(`/api/inventory/${p.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sort_order: p.sort_order }) })
+    ))
+  }, [products])
 
-    const payload = {
-      name: fd.get('name') as string,
-      slug: (fd.get('slug') as string) || (fd.get('name') as string).toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      icon: fd.get('icon') as string,
-      category: fd.get('category') as string,
-      description: fd.get('description') as string,
-      includes,
-      badge: (fd.get('badge') as string) || null,
-      badge_color: fd.get('badge_color') as string,
-      active: fd.get('active') === 'true',
-      sort_order: parseInt(fd.get('sort_order') as string) || 0,
-      images: imageUrl ? [imageUrl] : [],
-      variants,
-    }
-
-    if (!prodId) {
-      // Create new
-      const res = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      const { product } = await res.json()
-      if (product) {
-        const full = await fetch(`/api/inventory/${product.id}`).then(r => r.json())
-        setProducts(prev => [full, ...prev])
-      }
-    } else {
-      // Update existing
-      await fetch(`/api/inventory/${prodId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      const updated = await fetch(`/api/inventory/${prodId}`).then(r => r.json())
-      setProducts(prev => prev.map(p => p.id === prodId ? updated : p))
-    }
-
-    setProductSaving(false)
-    setEditingProduct(null)
-    setShowNewProduct(false)
+  const handleProductSaved = (saved: Product) => {
+    setProducts(prev => {
+      const idx = prev.findIndex(p => p.id === saved.id)
+      if (idx >= 0) return prev.map(p => p.id === saved.id ? saved : p)
+      return [saved, ...prev]
+    })
   }
 
-  // ── Nav ──
-  const navItems: { id: Page; icon: string; label: string; section?: string }[] = [
-    { id: 'overview', icon: '📊', label: 'Overview', section: 'Management' },
-    { id: 'crm', icon: '🎯', label: 'CRM · Leads', section: '' },
-    { id: 'orders', icon: '📦', label: 'Orders', section: '' },
-    { id: 'customers', icon: '🎓', label: 'Customers', section: '' },
-    { id: 'ed-partners', icon: '🏫', label: 'Ed-Partners', section: '' },
-    { id: 'reports', icon: '📈', label: 'Reports', section: 'Analytics' },
-    { id: 'inventory', icon: '🛍️', label: 'Inventory', section: 'Website' },
-    { id: 'services', icon: '✨', label: 'Services', section: '' },
-    { id: 'payouts', icon: '💷', label: 'Payouts', section: 'Config' },
-    { id: 'settings', icon: '⚙️', label: 'Settings', section: '' },
-  ]
+  // ── New product blank template ──
+  const blankProduct: Product = {
+    id: '', name: '', slug: '', icon: '📦', category: 'general',
+    description: '', includes: [], whats_not_included: [], badge: '', badge_color: '#2e7d52',
+    active: true, images: [], gallery: [], sort_order: products.length + 1,
+    terms_and_conditions: '', refund_policy: '', delivery_timeline: '',
+    is_hot_selling: false, is_on_sale: false, is_new: false, is_featured: false,
+    sale_price: null, faq: [], product_variants: [{ id: '', name: '', price: 0 }]
+  }
 
   const stageCounts = STAGES.reduce((acc, s) => ({ ...acc, [s]: leads.filter(l => l.stage === s).length }), {} as Record<string, number>)
   const pendingPartners = partners.filter(p => p.status === 'pending')
+
+  const navItems: { id: Page; icon: string; label: string; section?: string }[] = [
+    { id: 'overview', icon: '📊', label: 'Overview', section: 'Management' },
+    { id: 'crm', icon: '🎯', label: 'CRM · Leads' },
+    { id: 'orders', icon: '📦', label: 'Orders' },
+    { id: 'customers', icon: '🎓', label: 'Customers' },
+    { id: 'ed-partners', icon: '🏫', label: 'Ed-Partners' },
+    { id: 'reports', icon: '📈', label: 'Reports', section: 'Analytics' },
+    { id: 'catalogue', icon: '🛍️', label: 'Catalogue', section: 'Website' },
+    { id: 'payouts', icon: '💷', label: 'Payouts', section: 'Config' },
+    { id: 'settings', icon: '⚙️', label: 'Settings' },
+  ]
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--cream)', fontFamily: 'DM Sans, sans-serif' }}>
@@ -346,7 +796,7 @@ export default function AdminPanel() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {page === 'crm' && <Btn onClick={() => setShowNewLead(true)}>+ New lead</Btn>}
             {page === 'ed-partners' && <Btn onClick={() => setShowNewPartner(true)}>+ New partner</Btn>}
-            {page === 'inventory' && <Btn onClick={() => setShowNewProduct(true)}>+ New product</Btn>}
+            {page === 'catalogue' && <Btn onClick={() => setShowNewProduct(true)}>+ New service</Btn>}
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>StudentEssentials · {user?.email}</div>
           </div>
         </div>
@@ -380,25 +830,13 @@ export default function AdminPanel() {
                 </div>
               )}
 
-              <div style={{ ...S.card, padding: '20px 24px', marginBottom: 20 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', marginBottom: 16 }}>Lead pipeline</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10 }}>
-                  {STAGES.map(s => (
-                    <div key={s} style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 22, fontWeight: 600, color: STAGE_COLORS[s] }}>{stageCounts[s] ?? 0}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{STAGE_LABELS[s]}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
                 <div style={{ ...S.card, overflow: 'hidden' }}>
                   <div style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>Recent orders</div>
                     <button onClick={() => setPage('orders')} style={{ fontSize: 12, color: 'var(--forest)', background: 'none', border: 'none', cursor: 'pointer' }}>View all →</button>
                   </div>
-                  {MOCK_ORDERS.slice(0,4).map(o => (
+                  {MOCK_ORDERS.slice(0, 4).map(o => (
                     <div key={o.ref} style={{ padding: '12px 22px', borderBottom: '0.5px solid var(--border)', display: 'flex', alignItems: 'center', gap: 14 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)' }}>{o.student}</div>
@@ -412,36 +850,14 @@ export default function AdminPanel() {
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div style={{ ...S.card, padding: '20px' }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', marginBottom: 14 }}>Recent customers</div>
-                    {students.slice(0,4).map(s => (
-                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '0.5px solid var(--border)' }}>
-                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: 'var(--forest)', flexShrink: 0 }}>
-                          {(s.first_name ?? s.email ?? '?')[0].toUpperCase()}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--bottle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.first_name ?? s.email}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.source ?? 'website'}</div>
-                        </div>
-                        {statusBadge(s.status)}
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', marginBottom: 14 }}>Lead pipeline</div>
+                    {STAGES.map(s => (
+                      <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: STAGE_COLORS[s], flexShrink: 0 }}></div>
+                        <div style={{ fontSize: 12, color: 'var(--muted)', flex: 1 }}>{STAGE_LABELS[s]}</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)' }}>{stageCounts[s] ?? 0}</div>
                       </div>
                     ))}
-                    {students.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: '12px 0' }}>No customers yet</div>}
-                  </div>
-
-                  <div style={{ ...S.card, padding: '20px' }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', marginBottom: 14 }}>Ed-Partners</div>
-                    {partners.slice(0,3).map(p => (
-                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '0.5px solid var(--border)' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--bottle)' }}>{p.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>?utm_partner={p.utm_code}</div>
-                        </div>
-                        {p.status === 'pending'
-                          ? <span style={S.badge('var(--gold)', 'rgba(200,169,110,.15)')}>pending</span>
-                          : <span style={S.badge('var(--forest)', 'var(--mint)')}>{p.commission_rate}%</span>}
-                      </div>
-                    ))}
-                    {partners.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: '12px 0' }}>No partners yet</div>}
                   </div>
                 </div>
               </div>
@@ -462,7 +878,7 @@ export default function AdminPanel() {
               {loading && <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 40 }}>Loading leads…</div>}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 12, alignItems: 'start' }}>
                 {STAGES.map(stage => (
-                  <div key={stage} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (dragId.current) moveLead(dragId.current, stage) }}
+                  <div key={stage} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragId.current) moveLead(dragId.current, stage) }}
                     style={{ background: 'rgba(26,58,42,.03)', border: '0.5px solid var(--border)', borderRadius: 14, minHeight: 200, padding: '12px 10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: STAGE_COLORS[stage], flexShrink: 0 }}></div>
@@ -476,7 +892,6 @@ export default function AdminPanel() {
                         {lead.university && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>🎓 {lead.university}</div>}
                         {lead.email && <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>✉ {lead.email}</div>}
                         {lead.utm_source && <div style={{ fontSize: 10, color: 'var(--forest)', marginTop: 6, fontFamily: 'monospace' }}>utm: {lead.utm_source}</div>}
-                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>{new Date(lead.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
                       </div>
                     ))}
                     {leads.filter(l => l.stage === stage).length === 0 && (
@@ -506,7 +921,7 @@ export default function AdminPanel() {
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>💡 Orders will auto-populate once Stripe webhooks are wired.</div>
+              <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>💡 Real orders will appear once Stripe webhook is tested end-to-end.</div>
             </div>
           )}
 
@@ -537,7 +952,7 @@ export default function AdminPanel() {
               {pendingPartners.length > 0 && (
                 <div style={{ padding: '14px 20px', background: 'rgba(200,169,110,.1)', border: '0.5px solid rgba(200,169,110,.35)', borderRadius: 12, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <div style={{ fontSize: 16 }}>⏳</div>
-                  <div style={{ fontSize: 13, color: 'var(--bottle)' }}><strong>{pendingPartners.length}</strong> application{pendingPartners.length > 1 ? 's' : ''} waiting — approve or reject below.</div>
+                  <div style={{ fontSize: 13, color: 'var(--bottle)' }}><strong>{pendingPartners.length}</strong> application{pendingPartners.length > 1 ? 's' : ''} waiting for review.</div>
                 </div>
               )}
               <div style={{ ...S.card, overflow: 'hidden', marginBottom: 20 }}>
@@ -553,11 +968,8 @@ export default function AdminPanel() {
                     <div style={{ fontSize: 13, color: 'var(--muted)' }}>{p.institution ?? '—'}</div>
                     <div>
                       {p.contact_email && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{p.contact_email}</div>}
-                      {p.contact_phone && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{p.contact_phone}</div>}
                     </div>
-                    <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--forest)', background: 'var(--mint)', padding: '4px 8px', borderRadius: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      ?utm_partner={p.utm_code}
-                    </div>
+                    <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--forest)', background: 'var(--mint)', padding: '4px 8px', borderRadius: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>?utm_partner={p.utm_code}</div>
                     <span style={S.badge('var(--forest)', 'rgba(26,58,42,.08)')}>{p.commission_rate}%</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <span style={S.badge(
@@ -575,14 +987,6 @@ export default function AdminPanel() {
                 ))}
                 {partners.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>No partners yet.</div>}
               </div>
-              <div style={{ ...S.card, padding: '20px 24px', background: 'rgba(26,58,42,.04)' }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--bottle)', marginBottom: 8 }}>How UTM tracking works</div>
-                <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.7 }}>
-                  Each partner gets a unique UTM code. Share this link with them:<br />
-                  <code style={{ fontSize: 12, background: '#fff', padding: '3px 8px', borderRadius: 6, border: '0.5px solid var(--border)', color: 'var(--forest)' }}>https://student-essentials.com/?utm_partner=THEIR_CODE</code>
-                  <br />When a student signs up via this link, they're automatically attributed to that partner and a lead is created in CRM.
-                </div>
-              </div>
             </div>
           )}
 
@@ -598,139 +1002,75 @@ export default function AdminPanel() {
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
-                <div style={{ ...S.card, padding: '24px' }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 18 }}>Revenue by service</div>
-                  {[['🛏️', 'Bedding packs', 42], ['📱', 'SIM cards', 18], ['🛡️', 'Insurance', 15], ['🚗', 'Transfers', 14], ['✈️', 'Flights', 11]].map(([icon, name, pct]) => (
-                    <div key={name as string} style={{ marginBottom: 14 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, marginBottom: 6 }}>
-                        <span style={{ color: 'var(--bottle)' }}>{icon} {name}</span>
-                        <span style={{ color: 'var(--forest)', fontWeight: 500 }}>{pct}%</span>
+              <div style={{ ...S.card, padding: '24px' }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 18 }}>Pipeline funnel</div>
+                {STAGES.map(s => {
+                  const count = stageCounts[s] ?? 0
+                  const max = Math.max(...Object.values(stageCounts), 1)
+                  return (
+                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                      <div style={{ width: 70, fontSize: 11, color: 'var(--muted)' }}>{STAGE_LABELS[s]}</div>
+                      <div style={{ flex: 1, height: 6, background: 'rgba(26,58,42,.08)', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: `${(count / max) * 100}%`, height: '100%', background: STAGE_COLORS[s], borderRadius: 3 }}></div>
                       </div>
-                      <div style={{ height: 6, background: 'rgba(26,58,42,.08)', borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ width: `${pct}%`, height: '100%', background: 'var(--forest)', borderRadius: 3 }}></div>
-                      </div>
+                      <div style={{ width: 20, fontSize: 12, color: 'var(--bottle)', textAlign: 'right' }}>{count}</div>
                     </div>
-                  ))}
-                </div>
-                <div style={{ ...S.card, padding: '24px' }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 18 }}>Pipeline funnel</div>
-                  {STAGES.map(s => {
-                    const count = stageCounts[s] ?? 0
-                    const max = Math.max(...Object.values(stageCounts), 1)
-                    return (
-                      <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                        <div style={{ width: 70, fontSize: 11, color: 'var(--muted)' }}>{STAGE_LABELS[s]}</div>
-                        <div style={{ flex: 1, height: 6, background: 'rgba(26,58,42,.08)', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${(count / max) * 100}%`, height: '100%', background: STAGE_COLORS[s], borderRadius: 3 }}></div>
-                        </div>
-                        <div style={{ width: 20, fontSize: 12, color: 'var(--bottle)', textAlign: 'right' }}>{count}</div>
-                      </div>
-                    )
-                  })}
-                </div>
+                  )
+                })}
               </div>
             </div>
           )}
 
-          {/* ══ INVENTORY ══ */}
-          {page === 'inventory' && (
+          {/* ══ CATALOGUE ══ */}
+          {page === 'catalogue' && (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <div style={{ fontSize: 13, color: 'var(--muted)' }}>{products.length} products · {products.filter(p => p.active).length} live on website</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+                    {products.length} services · {products.filter(p => p.active).length} live on website · drag rows to reorder
+                  </div>
+                </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', background: 'rgba(26,58,42,.06)', padding: '6px 14px', borderRadius: 20 }}>
-                  Changes save to Supabase and reflect on the website immediately
+                  Changes reflect on student-essentials.com/services immediately
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
-                {products.map(product => (
-                  <div key={product.id} style={{ ...S.card, overflow: 'hidden', opacity: product.active ? 1 : 0.55, transition: 'opacity .2s' }}>
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+                {[
+                  { label: '🔥 Hot selling', bg: '#fff7ed', color: '#c2410c' },
+                  { label: '🏷️ On sale', bg: '#fef3c7', color: '#b45309' },
+                  { label: '✨ New', bg: '#eff6ff', color: '#1d4ed8' },
+                  { label: '⭐ Featured', bg: '#f5f3ff', color: '#7c3aed' },
+                ].map(t => (
+                  <span key={t.label} style={{ fontSize: 11, padding: '4px 12px', borderRadius: 20, background: t.bg, color: t.color, fontWeight: 500 }}>{t.label}</span>
+                ))}
+                <span style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>← click a tag to filter (coming soon)</span>
+              </div>
 
-                    {/* Image / icon area */}
-                    <div style={{ height: 130, background: 'linear-gradient(135deg, rgba(46,125,82,.07), rgba(46,125,82,.03))', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-                      {product.images?.[0] ? (
-                        <img src={product.images[0]} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <div style={{ fontSize: 44 }}>{product.icon}</div>
-                      )}
-                      <div style={{ position: 'absolute', top: 8, left: 8, right: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 20, background: product.active ? 'var(--forest)' : '#6b7280', color: '#fff' }}>
-                          {product.active ? '● Live' : '○ Hidden'}
-                        </span>
-                        {product.badge && (
-                          <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 20, background: product.badge_color, color: '#fff' }}>{product.badge}</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{ padding: '14px 16px 16px' }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)', marginBottom: 4 }}>{product.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 12, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any, overflow: 'hidden' }}>
-                        {product.description}
-                      </div>
-
-                      {/* Variant pills */}
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 14 }}>
-                        {product.product_variants?.slice(0,3).map(v => (
-                          <span key={v.id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(26,58,42,.06)', color: 'var(--muted)' }}>
-                            {v.name}{v.price > 0 ? ` · £${v.price}` : ''}
-                          </span>
-                        ))}
-                        {(product.product_variants?.length ?? 0) > 3 && (
-                          <span style={{ fontSize: 11, color: 'var(--muted)', padding: '2px 4px' }}>+{product.product_variants.length - 3} more</span>
-                        )}
-                      </div>
-
-                      {/* Actions */}
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => setEditingProduct(product)}
-                          style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 500, background: 'var(--forest)', color: '#fff', border: 'none', borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                          Edit
-                        </button>
-                        <button
-                          onClick={async () => {
-                            await fetch(`/api/inventory/${product.id}`, {
-                              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ active: !product.active }),
-                            })
-                            setProducts(prev => prev.map(p => p.id === product.id ? { ...p, active: !p.active } : p))
-                          }}
-                          style={{ padding: '8px 14px', fontSize: 12, fontWeight: 500, background: 'transparent', color: product.active ? '#ef4444' : 'var(--forest)', border: `0.5px solid ${product.active ? '#fca5a5' : 'rgba(46,125,82,.3)'}`, borderRadius: 20, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>
-                          {product.active ? 'Hide' : 'Show'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+              {/* Product list */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {products.map((product, index) => (
+                  <ProductRow
+                    key={product.id}
+                    product={product}
+                    index={index}
+                    onDragStart={i => { catalogueDragIdx.current = i }}
+                    onDrop={handleCatalogueDrop}
+                    onEdit={() => setEditingProduct(product)}
+                    onToggle={async () => {
+                      await fetch(`/api/inventory/${product.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !product.active }) })
+                      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, active: !p.active } : p))
+                    }}
+                  />
                 ))}
               </div>
 
               {products.length === 0 && (
                 <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 14 }}>
-                  No products yet — click "+ New product" to add one.
+                  No services yet — click "+ New service" to add one.
                 </div>
               )}
-            </div>
-          )}
-
-          {/* ══ SERVICES (legacy read-only list) ══ */}
-          {page === 'services' && (
-            <div>
-              <div style={{ ...S.card, padding: '16px 22px', marginBottom: 16, background: 'rgba(26,58,42,.03)', fontSize: 13, color: 'var(--muted)' }}>
-                This is a read-only view. To edit products, pricing and images go to <button onClick={() => setPage('inventory')} style={{ color: 'var(--forest)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontSize: 13, fontWeight: 500 }}>Inventory →</button>
-              </div>
-              <div style={{ ...S.card, overflow: 'hidden' }}>
-                {products.filter(p => p.active).map((p, i) => (
-                  <div key={p.id} style={{ padding: '16px 22px', borderBottom: '0.5px solid var(--border)', display: 'flex', alignItems: 'center', gap: 16, background: i % 2 ? 'rgba(26,58,42,.02)' : 'transparent' }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--mint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{p.icon}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--bottle)' }}>{p.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{p.product_variants?.length ?? 0} variants · from £{Math.min(...(p.product_variants?.map(v => v.price) ?? [0]))}</div>
-                    </div>
-                    <span style={S.badge('var(--forest)', 'var(--mint)')}>Active</span>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
 
@@ -805,13 +1145,10 @@ export default function AdminPanel() {
               <Field label="University" name="university" placeholder="Univ. of Manchester" />
               <Field label="Country" name="country" placeholder="India" />
             </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Notes</label>
-              <textarea name="notes" placeholder="Any notes…" style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', minHeight: 80, boxSizing: 'border-box' }} />
-            </div>
+            <TextArea label="Notes" name="notes" placeholder="Any notes…" />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <Btn variant="ghost" onClick={() => setShowNewLead(false)}>Cancel</Btn>
-              <Btn>Create lead</Btn>
+              <Btn type="submit">Create lead</Btn>
             </div>
           </form>
         </Modal>
@@ -823,19 +1160,15 @@ export default function AdminPanel() {
           <form onSubmit={createPartner}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
               <Field label="Organisation name *" name="name" required placeholder="UK Study Hub" />
-              <Field label="Institution type" name="institution" placeholder="University / College / Agency" />
+              <Field label="Institution type" name="institution" placeholder="University / Agency" />
               <Field label="Contact name" name="contact_name" placeholder="Ravi Kumar" />
               <Field label="Contact email" name="contact_email" type="email" placeholder="ravi@ukstudyhub.com" />
-              <Field label="Contact phone" name="contact_phone" placeholder="+44 7700 000000" />
               <Field label="UTM code *" name="utm_code" required placeholder="ukstudyhub" />
-            </div>
-            <Field label="Commission rate (%)" name="commission_rate" type="number" defaultValue="5" min="0" max="100" />
-            <div style={{ padding: '12px 16px', background: 'var(--mint)', borderRadius: 10, marginBottom: 16, fontSize: 12, color: 'var(--forest)' }}>
-              Partner referral link: <strong>student-essentials.com/?utm_partner=UTM_CODE</strong>
+              <Field label="Commission rate (%)" name="commission_rate" type="number" defaultValue="5" />
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <Btn variant="ghost" onClick={() => setShowNewPartner(false)}>Cancel</Btn>
-              <Btn>Create partner</Btn>
+              <Btn type="submit">Create partner</Btn>
             </div>
           </form>
         </Modal>
@@ -863,113 +1196,19 @@ export default function AdminPanel() {
               ))}
             </div>
           </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 6 }}>Notes</div>
-            <textarea defaultValue={selectedLead.notes ?? ''} onBlur={e => updateLeadNotes(selectedLead.id, e.target.value)} placeholder="Add notes…"
-              style={{ width: '100%', padding: '10px 14px', fontSize: 13, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', minHeight: 100, boxSizing: 'border-box' }} />
-          </div>
+          <TextArea label="Notes" defaultValue={selectedLead.notes ?? ''} onBlur={e => updateLeadNotes(selectedLead.id, e.target.value)} placeholder="Add notes…" />
         </Modal>
       )}
 
-      {/* ══ PRODUCT EDIT / NEW MODAL ══ */}
-      {(editingProduct !== null || showNewProduct) && (() => {
-        const isNew = editingProduct === null
-        const prod = editingProduct ?? {
-          id: '', name: '', slug: '', icon: '📦', category: 'general',
-          description: '', includes: [], badge: '', badge_color: '#2e7d52',
-          active: true, images: [], sort_order: products.length + 1,
-          product_variants: [{ id: '', name: '', price: 0 }],
-        }
-        return (
-          <Modal
-            title={isNew ? 'New product' : `Edit — ${prod.name}`}
-            onClose={() => { setEditingProduct(null); setShowNewProduct(false) }}
-          >
-            <form onSubmit={e => handleProductSave(e, isNew ? null : prod.id)}>
-
-              {/* Row 1: icon + name */}
-              <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '0 12px' }}>
-                <Field label="Icon" name="icon" defaultValue={prod.icon} placeholder="🛏️" />
-                <Field label="Product name *" name="name" required defaultValue={prod.name} placeholder="Bedding Pack" />
-              </div>
-
-              {/* Row 2: slug + category */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
-                <Field label="URL slug" name="slug" defaultValue={prod.slug} placeholder="bedding-pack" />
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Category</label>
-                  <select name="category" defaultValue={prod.category} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}>
-                    <option value="living">Living</option>
-                    <option value="connectivity">Connectivity</option>
-                    <option value="travel">Travel</option>
-                    <option value="insurance">Insurance</option>
-                    <option value="finance">Finance</option>
-                    <option value="general">General</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Description */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Description</label>
-                <textarea name="description" defaultValue={prod.description} rows={2}
-                  placeholder="One-line description shown on the services page…"
-                  style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', boxSizing: 'border-box' }} />
-              </div>
-
-              {/* What's included */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>
-                  What's included <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(one bullet per line)</span>
-                </label>
-                <textarea name="includes" defaultValue={prod.includes?.join('\n')} rows={4}
-                  placeholder={'Duvet, pillow & pillowcases\nPlates, mugs & cutlery\nDelivered to your room'}
-                  style={{ width: '100%', padding: '10px 14px', fontSize: 13, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', resize: 'vertical', boxSizing: 'border-box' }} />
-              </div>
-
-              {/* Badge + colour + sort + status */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px 80px 90px', gap: '0 10px' }}>
-                <Field label="Badge text" name="badge" defaultValue={prod.badge ?? ''} placeholder="Most popular" />
-                <Field label="Badge colour" name="badge_color" defaultValue={prod.badge_color} placeholder="#c8a96e" />
-                <Field label="Sort order" name="sort_order" type="number" defaultValue={String(prod.sort_order)} />
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>Status</label>
-                  <select name="active" defaultValue={String(prod.active)} style={{ width: '100%', padding: '10px 14px', fontSize: 14, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif' }}>
-                    <option value="true">Live</option>
-                    <option value="false">Hidden</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Image URL */}
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 5 }}>
-                  Image URL <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(paste a URL or upload to Supabase Storage and paste the public URL)</span>
-                </label>
-                <input name="image_url" defaultValue={prod.images?.[0] ?? ''}
-                  placeholder="https://…supabase.co/storage/v1/object/public/product-images/bedding.jpg"
-                  style={{ width: '100%', padding: '10px 14px', fontSize: 13, background: '#fff', border: '0.5px solid rgba(26,58,42,.2)', borderRadius: 10, outline: 'none', fontFamily: 'DM Sans, sans-serif', boxSizing: 'border-box' }} />
-                {prod.images?.[0] && (
-                  <img src={prod.images[0]} alt="" style={{ marginTop: 8, height: 80, borderRadius: 8, objectFit: 'cover' }} />
-                )}
-              </div>
-
-              {/* Pricing variants */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--moss)', marginBottom: 8 }}>
-                  Pricing variants <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(name + price in £)</span>
-                </div>
-                <VariantsEditor defaultVariants={prod.product_variants ?? []} />
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <Btn variant="ghost" onClick={() => { setEditingProduct(null); setShowNewProduct(false) }}>Cancel</Btn>
-                <Btn style={{ minWidth: 110 }}>{productSaving ? 'Saving…' : isNew ? 'Create product' : 'Save changes'}</Btn>
-              </div>
-            </form>
-          </Modal>
-        )
-      })()}
+      {/* ══ CATALOGUE EDITOR ══ */}
+      {(editingProduct || showNewProduct) && (
+        <CatalogueEditor
+          product={editingProduct ?? blankProduct}
+          isNew={!editingProduct}
+          onClose={() => { setEditingProduct(null); setShowNewProduct(false) }}
+          onSave={saved => { handleProductSaved(saved); setEditingProduct(null); setShowNewProduct(false) }}
+        />
+      )}
 
     </div>
   )
